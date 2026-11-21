@@ -754,7 +754,7 @@ class ChatWrapper:
                          call_id, told, failure["message"])
         return report
 
-    # ----- shortening the newest reply -----------------------------------------
+    # ----- truncating the last reply ------------------------------------------
     def truncate_last_reply(self, keep_text: str) -> None:
         """Shorten the newest assistant message to ``keep_text``.
 
@@ -793,7 +793,7 @@ class ChatWrapper:
             if messages and messages[-1]["role"] == "assistant":
                 keep_text = _kept_of_the_newest(_shown_before(messages), messages[-1]["content"],
                                                 keep_text)
-            self._conversation.truncate_newest(keep_text)
+            self._conversation.truncate_last_reply(keep_text)
 
     # ----- introspection -------------------------------------------------------
     @property
@@ -1214,7 +1214,7 @@ def _kept_of_the_newest(before: str, newest: str, keep_text: str) -> str:
     if before and keep_text.startswith(turn):
         return keep_text[len(turn):]
     if before and keep_text and turn.startswith(keep_text) and not newest.startswith(keep_text):
-        return ""                       # it ended before the newest reply's text
+        return ""                       # it ended before the last reply's text
     if between and (keep_text.startswith(between) or between.startswith(keep_text)):
         return keep_text[len(between):]
     return keep_text

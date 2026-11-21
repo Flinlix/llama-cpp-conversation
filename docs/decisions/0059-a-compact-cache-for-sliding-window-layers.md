@@ -39,10 +39,9 @@ kept history again at an eviction instead.
   For it the engine reports as the oldest position the larger of the
   attention's and the running state's, which is the newest token, so a check
   would empty the cache at every cut, and after every restore of a saved state
-  (found by review on 2026-11-21). Such a cache takes only a cut back within
-  the last micro-batch, which its running state keeps snapshots of, and the
-  window layers keep at least that much beyond their window, so no cut it
-  takes leaves them short.
+  (found by review on 2026-11-21). Such a cache takes no cut back at all,
+  since the library asks llama.cpp for no snapshots of the running state
+  (`n_rs_seq` stays 0), so no cut can leave its window layers short.
 - The configuration guide states the trade-off; the numbers stay here.
 
 ## Consequences

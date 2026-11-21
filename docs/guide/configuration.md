@@ -90,15 +90,18 @@ turn.
 That reading happens in the work after a reply, while the reply is read or
 spoken, so the wait before the next first word does not change. These do:
 
-- An action that comes during that work waits for the rest of it. Shortening a
-  reply right after it ended, as when the listener interrupts speech at once,
-  is such an action.
-- Shortening a reply by more than the window layers keep beyond their window
-  (about one micro-batch) reads the whole conversation again within the call
-  that shortens it.
-- An eviction an action itself needs, because `max_history_exchanges` is
-  reached or a question does not fit, reads the kept history again before the
-  reply, as on any cache that cannot shift.
+- An action that comes during that work waits for the rest of it. Truncating
+  the last reply right after it ended, as when the listener interrupts speech
+  at once, is such an action. On any cache that cannot shift, a question asked
+  while the kept history is read again waits for that reading, since it needs
+  the history.
+- Truncating the last reply by more than the window layers keep beyond their
+  window (about one micro-batch) reads the whole conversation again within
+  `truncate_last_reply`.
+- An eviction a question needs because it does not fit reads the kept history
+  again before the reply; one an `inject` needs, at `max_history_exchanges` or
+  for room, reads it within the `inject`. One a `reply` needs at
+  `max_history_exchanges` comes after the reply.
 - Going back to a kept conversation reads it again from the start wherever
   the switch cuts back further than that, so `kept_conversation_bytes` saves
   little with the compact cache.
@@ -108,8 +111,8 @@ spoken, so the wait before the next first word does not change. These do:
 
 On the full-size cache too, the engine reuses the cells its window layers no
 longer attend over when it needs room. After an eviction those layers may hold
-only a little more than their window, so a reply shortened further back than
-that leaves them a gap of usually a few dozen tokens. The library does not
+only a little more than their window, so truncating the last reply further
+back than that leaves them a gap of usually a few dozen tokens. The library does not
 read the conversation again for it, since that would take far longer on a slow
 processor than the gap costs in the answer. The compact cache checks every cut
 and reads the conversation again where its window falls short. Where one

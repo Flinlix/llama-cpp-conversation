@@ -24,9 +24,9 @@ binding maps them by an older numbering. The engine's errors were filed as
   dropped.
 - `log_level` and `LOG_LEVELS` are removed.
 - Across the library each level means one thing: `INFO` for a change of the
-  conversation the caller did not ask for, `DEBUG` for a slower path (the
-  cache decoded again, history going for room during a running
-  conversation), `WARNING` for something to fix (an add-on file not used, a
+  conversation the caller did not ask for, history going for room during a
+  running conversation included, `DEBUG` for a slower path (the cache decoded
+  again), `WARNING` for something to fix (an add-on file not used, a
   result that cannot be written, an engine whose penalty signature differs).
 - The README's logging example adds `logging.basicConfig()`, since without a
   handler Python shows only warnings and errors.

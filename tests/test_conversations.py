@@ -1482,7 +1482,7 @@ def test_the_reply_that_ends_a_turn_that_called_tools_is_cut_to_what_its_stream_
     keep = shown[:len(shown) - len(newest) + min(cut, len(newest) - 1)]
     if not cut and run.context.stated_render(
             [{"role": "user", "content": "Weather?"}, {"role": "assistant", "content": ""}]) is None:
-        with pytest.raises(TemplateRefusedError, match="shortened to ''"):
+        with pytest.raises(TemplateRefusedError, match="truncated to ''"):
             run.chat.truncate_last_reply(keep)      # the template writes no empty reply
         return
     run.chat.truncate_last_reply(keep)
@@ -3187,7 +3187,7 @@ def test_a_reply_after_a_call_whose_tokens_end_past_its_text_is_refused_a_cut_to
         try:
             run.chat.truncate_last_reply("")
         except TemplateRefusedError as refused:
-            if "shortened to ''" in str(refused):
+            if "truncated to ''" in str(refused):
                 continue                                # the template writes no empty reply
             assert refused.field == "keep_text", (stem, refused)
             assert run.chat.conversation() == before

@@ -107,8 +107,11 @@ does not run.
 when it writes the conversation; beginning again with the conversation and
 another list declares that one instead. The declaration goes where the
 template writes declarations. Where that is the system turn, a later
-declaration decodes the conversation after it again once. No registry is kept:
-a request whose calls are to run is handed one.
+declaration decodes the conversation after it again once. Where a template
+writes them right before the last question, they move with every question:
+after each reply, in the work after it, they are decoded again, which costs
+their length every turn but does not delay the first word. No registry is
+kept: a request whose calls are to run is handed one.
 
 **A template of its own for tools.** A GGUF may ship, beside its default chat
 template, one for a conversation that declares tools

@@ -24,7 +24,7 @@ leaves the caller unable to tell what the model asked for and what ran.
   the same way whether the library ran the tool or the caller handed it over.
 - Every call is reported on `Reply.tool_calls` with a `status`: `"complete"`,
   `"unreadable"` (with the `text` the model wrote between the call's opening
-  and closing, and no name, arguments or id), `"unfinished"` (cut short, or
+  and closing, no name or arguments, and an id only where it is one of a batch), `"unfinished"` (cut short, or
   not run because it spent the reply cap), and `"result_dropped"` (its tool
   ran but the turn closed for want of room).
 - A call a registry runs is handed over in the stream just before it runs. A

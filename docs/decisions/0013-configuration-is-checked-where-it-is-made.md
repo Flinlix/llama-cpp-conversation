@@ -29,8 +29,7 @@ while the wrapper ran, and two settings did what a request argument does.
   generation of one `reply` together under every policy; a reply that goes on
   with an open turn is a request of its own with a cap of its own.
 - `ChatWrapper.config` is the configuration with the model's sampling merged
-  in where the wrapper loads the model, and the configuration as passed with
-  a context of one's own.
+  in, from the model the wrapper loads or from a context of one's own.
 - The context's own size is checked where it is adopted.
 
 ## Consequences

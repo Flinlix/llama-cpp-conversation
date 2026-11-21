@@ -1,8 +1,9 @@
-# llama-cpp-conversation: a KV-cache manager for llama.cpp
+# llama-cpp-conversation: a chat library for llama.cpp that prefills as little as possible
 
 <!-- start: lead -->
-A Python chat library over llama.cpp whose goal is to **prefill as little as
-possible**. It keeps the KV cache alive across turns, decodes only what is new,
+A chat library for llama.cpp that **prefills as little as possible**, so that
+conversations stay fast even on small machines. It keeps the KV cache alive
+across turns, decodes only what is new,
 and when the context fills it *removes the oldest exchanges and shifts the
 survivors down to close the gap*, reusing their KV instead of decoding them
 again.

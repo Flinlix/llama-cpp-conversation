@@ -27,16 +27,16 @@ fit even cut to nothing closed the turn and returned 0, as a success does.
   included.
 - Each such change is logged once at the level its kind takes (0018). A
   `begin` logs one line only where it left something out or could not use the
-  generated turns it was given, for example "begin kept 120 of 200 history
-  messages; left out the 80 oldest so that half of the 8192-token context stays
-  free".
+  generated turns it was given, for example "the 80 oldest history message(s)
+  went so that half of the 8192-token context stays free at a begin".
 
 ## Consequences
 
 - A caller learns of every change it did not ask for at the action that made
   it.
-- Eviction during a running conversation logs at `DEBUG`, since once the
-  context is full it happens every turn.
+- Eviction during a running conversation logs at `INFO`, as every change the
+  caller did not ask for does (0018); once the context is full that is a line
+  every turn.
 
 ## Alternatives rejected
 

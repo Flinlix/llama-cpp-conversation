@@ -24,7 +24,8 @@ number says, and nothing noticed a change to a public signature.
   signature it follows.
 - The exported constants and type aliases carry their own docstrings, so the
   API reference lists every exported name; it also lists `FakeContext` and
-  the invented templates.
+  `ScriptedCall` from `testing.fake_context`, and the invented templates from
+  `testing.invented_templates`.
 
 ## Consequences
 

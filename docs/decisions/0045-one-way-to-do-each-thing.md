@@ -12,7 +12,8 @@ more pair that can disagree.
 
 ## Decision
 
-- One read of the conversation: `conversation()`. One read of the calls still
+- One read of the conversation: `conversation()`, and `generated_turns()` for
+  its generated turns alone, without copying the messages. One read of the calls still
   owed: `pending_calls`. Whether a reply without new text has something to
   answer: `awaits_reply`. What a model can do: `capabilities(tools=...)`.
 - One way to start, start again or change the tools or the reasoning:

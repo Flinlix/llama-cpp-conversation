@@ -7,8 +7,9 @@ number says about it.
 
 - Every name `llama_cpp_conversation` exports, with its signature, as the
   [API reference](../reference.md) lists them.
-- `llama_cpp_conversation.testing`: `FakeContext` and the invented templates,
-  for tests of code that drives a `ChatWrapper`.
+- `llama_cpp_conversation.testing.fake_context`: `FakeContext` and
+  `ScriptedCall`, and `llama_cpp_conversation.testing.invented_templates`: the
+  invented templates, for tests of code that drives a `ChatWrapper`.
 - What `conversation()` returns and `begin` takes, the add-on file format,
   and the cache context protocol (`CacheContext`).
 - The logger names `llama_cpp_conversation` and `llama_cpp_conversation.engine`.

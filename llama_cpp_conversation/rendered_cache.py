@@ -776,7 +776,7 @@ class RenderedCache:
                 f"the conversation needs {len(target.tokens)} tokens but {room} leave room "
                 f"for the reply; {RAISE_THE_ROOM}", len(target.tokens), room)
         if self._memory.keeps_saved_states:
-            # One state, where the reply's turn begins: a reply written again or shortened decodes
+            # One state, where the reply's turn begins: a reply written again or truncated decodes
             # the few tokens of the generation prompt again rather than save the cache twice.
             end = len(target.tokens)
             start = self._state.prompt_start
@@ -1370,11 +1370,8 @@ class RenderedCache:
                 self._memory.rest()
 
     # ----- changing what it holds -----------------------------------------------------
-    def truncate_newest(self, keep_text: str) -> None:
-        """Shorten the newest reply's text to ``keep_text``.
-
-        A reply that ends a turn that called tools keeps the tokens it was
-        generated as up to ``keep_text``.
+    def truncate_last_reply(self, keep_text: str) -> None:
+        """Truncate the last reply's text to ``keep_text``; one that ends a turn that called tools keeps its tokens up to it.
 
         Raises:
             ValueError: If no conversation was begun, a reply is open, which
@@ -1422,8 +1419,8 @@ class RenderedCache:
             messages[-1] = shortened
             if not self._writes(self._targets.newest_part(self._state.messages)):
                 raise TemplateRefusedError(
-                    "keep_text", f"this model's template does not write the newest reply "
-                    f"shortened to {keep_text!r}; keep more of its text")
+                    "keep_text", f"this model's template does not write the last reply "
+                    f"truncated to {keep_text!r}; keep more of its text")
             self._holding.render_ahead()
             self._memory.rest()
 

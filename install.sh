@@ -6,9 +6,7 @@
 #   ./install.sh --cuda    force the Nvidia GPU build
 #   add --dev to any of the above to also install the test, development and documentation tools
 #
-# Why build from source: the prebuilt wheel targets a baseline instruction set and
-# ships no CUDA. GGML_NATIVE=ON compiles with -march=native so the CPU's own
-# kernels are used; GGML_CUDA=on compiles the CUDA backend so layers can offload.
+# The engine is built from source for this machine; see docs/decisions/0019-engine-binding-floor-and-packaging.md.
 set -euo pipefail
 
 cd "$(dirname "$0")"

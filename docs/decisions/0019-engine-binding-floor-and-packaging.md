@@ -20,6 +20,10 @@ saved states rest on; every other name is present from 0.3.9 on.
   five from 0.3.35, the vocabulary size first), so the adapter reads which one
   it has. An unknown signature warns at the first generation, which then runs
   unpenalized rather than refusing to start.
+- The engine is built from source for each machine: the prebuilt wheel
+  targets a baseline instruction set and ships no CUDA. `GGML_NATIVE=ON`
+  compiles for the machine's own processor; `GGML_CUDA=on` compiles the CUDA
+  backend, so that layers can be offloaded.
 - `install.sh` checks the build by constructing the adapter, which raises where
   a symbol is missing. The message for a missing engine package names 0.3.23,
   that it is built from source for the machine, and the README's install

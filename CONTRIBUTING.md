@@ -49,7 +49,7 @@ these. Each is found by the test named, which says where.
 
 | Check | Test |
 |---|---|
-| No em dash anywhere, no dash between two clauses in prose, no path of one machine outside the decision records | `tests/test_prose.py` |
+| No em dash in prose, no dash between two clauses in prose, no path of one machine outside the decision records | `tests/test_prose.py` |
 | No model family or vendor named outside the files rule 3 lists | `tests/test_neutral.py` |
 | Every `while` loop of the library gives the measure it makes smaller (rule 12) | `tests/test_loops.py` |
 | A plain reply runs only the functions listed as serving every template (rule 5); a function a plain reply needs is added to `_PLAIN_REPLY_CODE` | `tests/test_wrapper.py` |
