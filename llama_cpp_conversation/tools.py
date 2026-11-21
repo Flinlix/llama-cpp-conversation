@@ -1,8 +1,6 @@
 """What a tool is declared as, and what a model's call to one holds.
 
-Running calls is :mod:`llama_cpp_conversation.tool_registry`'s, and reading a call back
-from what the model wrote is :mod:`llama_cpp_conversation.call_parsing`'s. See
-docs/decisions/0038-a-call-is-read-only-where-all-its-text-is-read.md.
+See docs/decisions/0038-a-call-is-read-only-where-all-its-text-is-read.md.
 """
 
 from __future__ import annotations
@@ -74,9 +72,7 @@ def nesting_depth(value) -> int:
 def json_value_fault(value) -> str | None:
     """What keeps ``value`` from being a JSON value every model can be given, ``None`` where nothing does.
 
-    Objects with text keys, lists, text, finite numbers, truth values and
-    ``None``, nested at most :data:`MAX_ARGUMENT_DEPTH` levels, no text
-    holding a lone surrogate.
+    Such a value nests at most :data:`MAX_ARGUMENT_DEPTH` levels, its text without a lone surrogate.
     """
     if nesting_depth(value) > MAX_ARGUMENT_DEPTH:
         return f"it nests deeper than {MAX_ARGUMENT_DEPTH} levels"
@@ -142,10 +138,7 @@ class ToolSpec:
 
 @dataclass(frozen=True)
 class ToolCall:
-    """One call a model asked for.
-
-    It may be kept in a set or used as a dict key, and equals another call
-    only where every field does.
+    """One call a model asked for; it may be kept in a set, and equals another only where every field does.
 
     Attributes:
         name: The function named. Nothing here checks that it exists.
@@ -153,8 +146,8 @@ class ToolCall:
         id: What tells it apart from every other call of its conversation, as
             the conversation's history holds it: the id the model wrote for
             it where its format holds one, else one the library gives. Empty
-            only for a call that has none: an unfinished one, or one that
-            could not be read where the reply stopped on it.
+            only for a call that has none: an unfinished one not read whole,
+            or one that could not be read where the reply stopped on it.
         status: ``"complete"`` for a call that was read. ``"unreadable"``
             for one that was written but could not be read, which the library
             answers itself, and ``"unfinished"`` for one the reply cap or a

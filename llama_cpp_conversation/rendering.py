@@ -1,7 +1,6 @@
-"""A conversation's renders: any messages as its template writes them, split into the template's text and the caller's, and tokenized as the cache holds them.
+"""A conversation's renders: messages as its template writes them, split into its text and the caller's, and tokenized.
 
-A turn kept as the tokens it was generated as stands in the tokens for the
-template's version of it. See docs/decisions/0028-a-turn-that-called-tools-keeps-its-generated-tokens.md.
+See docs/decisions/0028-a-turn-that-called-tools-keeps-its-generated-tokens.md.
 """
 
 from __future__ import annotations
@@ -26,7 +25,10 @@ _ANSWER_MARK = "QQANSWERMARKQQ"
 
 @dataclass(frozen=True, eq=False)
 class GeneratedTurn:
-    """A turn held as the tokens it was generated as, in place of the template's version of it; the message it ends with holds it under :data:`~llama_cpp_conversation.messages.GENERATED_TURN`."""
+    """A turn held as the tokens it was generated as, in place of the template's version of it.
+
+    The message it ends with holds it under :data:`~llama_cpp_conversation.messages.GENERATED_TURN`.
+    """
 
     tokens: tuple[int, ...]
     span: int                             # how many messages it covers, the one holding it the last
@@ -49,10 +51,7 @@ def with_generated_turn(message: dict, turn: GeneratedTurn | None) -> dict:
 class Target:
     """What the cache should hold for some messages, and where each generated turn placed in it begins.
 
-    ``anchors`` holds, for the two newest exchanges of the messages rendered
-    where known, the index of the message each follows and where in
-    ``tokens`` the tag that opens it begins; ``exchanges_at`` is where the
-    tags that open the conversation's two newest exchanges begin, those known.
+    ``anchors`` and ``exchanges_at`` say where the tags that open the two newest exchanges begin, where known.
     """
 
     tokens: list[int]
@@ -71,11 +70,7 @@ class RenderInputs(Protocol):
 class ConversationRendering:
     """One conversation's renders, made with its declarations, its reasoning switch and its generated turns.
 
-    ``inputs`` holds those, and is read at every use as it is then. Renders
-    and splits are reused while the template, the declarations and the
-    reasoning switch stay as they were: within one action, and into the next
-    where :meth:`next_action` keeps them, so that the memo holds at most two
-    actions' renders, until :meth:`forget_renders`.
+    Renders are reused while those stay as they were, for at most two actions.
     """
 
     def __init__(self, context, template: Callable[[], ResolvedTemplate],
@@ -237,11 +232,7 @@ class ConversationRendering:
                        cuts: tuple[str, ...] = ()) -> str | None:
         """What of ``answer``, a reply after ``messages`` with ``thought``, a conversation can hold; ``None`` where nothing.
 
-        The answer itself where the template writes it as its text. Else a
-        part of it the template does: the part it writes of the whole answer
-        as a past reply, or what follows the last of ``cuts``, texts a
-        template may cut a reply at, each trimmed or not; the form that
-        renders as the whole answer does is preferred.
+        The answer itself where written as text, else the part the template writes, as a past reply or after ``cuts``.
         """
         after = [{"role": "user", "content": STAND_IN}]
         reply = {"role": "assistant", "content": answer, **({THOUGHT_KEY: thought} if thought else {})}
@@ -279,8 +270,7 @@ class ConversationRendering:
     def length(self, messages: list[dict], generation_prompt: bool) -> int:
         """How many tokens the cache holds for ``messages``, each generated turn as it was generated.
 
-        Where the template refuses a conversation that ends on a reply, up to
-        where a question after it would go.
+        Where the template refuses a conversation ending on a reply, up to where a question after it would go.
         """
         if not generation_prompt and messages and messages[-1]["role"] != "user" \
                 and self.render(messages, False) is None:
@@ -300,7 +290,7 @@ class ConversationRendering:
 
     def head(self, messages: list[dict], through: int,
              with_generated_turns: bool = False) -> list[int] | None:
-        """The cache's tokens up to the first tag after the reply of oldest exchange ``through``, 0 or 1, from the system message and the oldest two exchanges of ``messages``; ``None`` where they cannot be told.
+        """The cache's tokens up to the first tag after the reply of oldest exchange ``through``, 0 or 1; else ``None``.
 
         Args:
             with_generated_turns: Whether exchanges that called tools may be among
@@ -354,7 +344,10 @@ class ConversationRendering:
     # ----- generated turns -----------------------------------------------------------------
     def place(self, first: int, last: int, on_call: bool,
               split: SplitRender) -> tuple[int, int] | None:
-        """Where the template writes the generated turn of messages ``first`` to ``last`` in ``split``: from the first tag after the question's text to the end of its call, where it ends ``on_call``, or of its reply; ``None`` where it cannot be placed."""
+        """Where the template writes the generated turn of messages ``first`` to ``last`` in ``split``; else ``None``.
+
+        From the first tag after the question's text to the end of its call, where ``on_call``, or of its reply.
+        """
         if not first:
             return None
         start = self.tag_after_content(split, first - 1)

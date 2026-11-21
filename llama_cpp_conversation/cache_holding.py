@@ -1,4 +1,7 @@
-"""Bringing the cache to hold a target, with the anchors and the states kept where the opening, the newest exchanges and the reply begin, and the render for the next question decoded ahead."""
+"""Bringing the cache to hold a target, keeping anchors and states where the opening, the newest exchanges and the reply begin.
+
+It also decodes ahead the render for the next question.
+"""
 
 from __future__ import annotations
 
@@ -67,14 +70,17 @@ class CacheHolding:
         return True
 
     def pin_the_reply(self, opening: list[int], tokens: list[int], end: int) -> None:
-        """Keep a state where the reply after ``tokens``, decoded to ``end``, begins, so that a reply written again, or shortened, decodes only itself and its opening."""
+        """Keep a state where the reply after ``tokens``, decoded to ``end``, begins, so that a reply written again, or truncated, decodes only itself and its opening."""
         starts = end - len(opening) if opening and tokens[-len(opening):] == opening else end
         self._memory.pin([starts if end - len(tokens) < starts else end]
                          if self.reply_kept_from_its_start else [], THE_REPLY)
 
     @property
     def reply_kept_from_its_start(self) -> bool:
-        """Whether a state is kept where the reply begins: only where the template writes a past reply otherwise than it was generated, which takes the cache back there after every reply. See docs/decisions/0024-saved-states-on-a-cache-that-cannot-cut.md."""
+        """Whether a state is kept where the reply begins: only where the template rewrites a past reply.
+
+        See docs/decisions/0024-saved-states-on-a-cache-that-cannot-cut.md.
+        """
         return bool(self._state.reasoning) or not self._template().properties.writes_reply_as_prompted
 
     def pin_opening(self) -> None:
@@ -161,7 +167,10 @@ class CacheHolding:
         return ([max(older)] if older else []) + list(places)
 
     def _newest_exchanges_at(self) -> list[int] | None:
-        """Where in the cache each of the two newest exchanges begins, the tag that opens its question, those that cannot be told left out; ``None`` where neither this action nor the one before rendered the conversation whole in either form, which it is not rendered again for."""
+        """Where in the cache each of the two newest exchanges begins, at the tag that opens its question.
+
+        ``None`` where neither this action nor the one before rendered the whole conversation.
+        """
         messages = self._state.messages
         # Not the first after the system turn, whose tag may stand inside it: the opening's
         # state stands there.

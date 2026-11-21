@@ -1,4 +1,4 @@
-"""What a conversation publishes after each change, for readers that hold no lock: a copy, worked out from its state and holding nothing of its own, and the history forms read from it."""
+"""What a conversation publishes after each change, for readers that hold no lock, and the history forms read from it."""
 
 from __future__ import annotations
 
@@ -16,7 +16,10 @@ from .tools import ToolCall
 def published(state: ConversationState, pending_calls: list[ToolCall], turn_open: bool,
               total_tokens: int, joins_questions: bool,
               model_fingerprint: Callable[[], str]) -> Published:
-    """The copy of ``state`` readers without the lock see, the calls it owes, the cache's length and, where it keeps a turn as generated, the model's fingerprint beside it."""
+    """The copy of ``state`` readers without the lock see: the conversation, its owed calls and the cache's length.
+
+    The model's fingerprint stands beside it where a turn is kept as generated.
+    """
     return Published(
         messages=tuple(state.messages), joins_questions=joins_questions,
         tools=tuple(state.tools) if state.uses_tool_template else None,

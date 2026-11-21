@@ -1,22 +1,6 @@
-"""llama_cpp_conversation: a KV-cache managing chat wrapper around llama.cpp.
+"""llama_cpp_conversation: a chat library for llama.cpp that prefills as little as possible, so that conversations stay fast even on small machines.
 
-The core actions, each prefilling as little as possible:
-
-* :meth:`ChatWrapper.begin`: begin, or begin again, from a history and its
-  settings, decoding only where it differs from what the cache holds.
-* :meth:`ChatWrapper.inject`: prefill one message as context, no generation.
-* :meth:`ChatWrapper.reply`: prefill the request text, then stream the reply,
-  refusing, handing over or running the tool calls the model makes.
-* :meth:`ChatWrapper.inject_tool_result`: answer a call handed over.
-* :meth:`ChatWrapper.truncate_last_reply`: shorten the newest reply to what was
-  read or heard of it.
-* :meth:`ChatWrapper.conversation`: everything :meth:`ChatWrapper.begin`
-  takes to begin the conversation the cache holds again.
-
-Crossing either eviction limit removes the oldest exchanges; a cache that can
-shift moves the survivors down, reusing their KV without re-prefilling. A
-model whose own template describes tool calls can use them, the tags and the
-argument spelling being recovered from that template.
+Its actions are the methods of :class:`ChatWrapper`; the actions guide lists them.
 """
 
 from .cache_context import TOOL_USE_TEMPLATE, CacheContext

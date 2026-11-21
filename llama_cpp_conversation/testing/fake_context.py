@@ -1,10 +1,6 @@
 """A model-free stand-in for a loaded model's cache context, worked over a list of ints.
 
-It renders with a template's own renderer, the one a model is loaded with.
-Only the tokenizer is a stand-in, one token per character and one per tag, or
-one that also merges a space with the letter or digit after it, so what is
-compared is the text. The cache is a plain list of token ids, and the
-model is a script.
+How it tokenizes and generates is in the cache-context guide.
 """
 
 from __future__ import annotations
@@ -154,30 +150,9 @@ def written_call(template, context, name: str, arguments: dict) -> tuple[str, st
 
 
 class FakeContext:
-    """A cache context without a model: a template's renderer, a tokenizer stand-in, a list as the cache, and a scripted model.
+    """A cache context without a model: a template's renderer, a tokenizer stand-in, a list as the cache, a scripted model.
 
-    The tokenizer gives one token per character and, where special-token
-    parsing is on, one per tag-shaped text, each a token of its own from the
-    first time it is met: a stand-in for a vocabulary that holds every tag,
-    such as one closing each argument of a call. A tag typed into a message,
-    which is tokenized with parsing off, stays its characters and cannot
-    become the model's own. The tags it lists are those the template spells
-    or writes, and each closing tag among them without its slash. Where the fixture says
-    ``adds_bos``, ``BOS`` comes first where the opener is asked for.
-
-    A generation is the library's own loop drawing, in this order: the next of
-    ``call_script`` where a call's opening may be drawn, else the next of
-    ``replies``, else ``gen_text`` cut or padded to ``gen_tokens``; then the
-    first tag of the closing after a reply, the fixture's ``turn_end_token``
-    or else its end-of-sequence tag, as the model writes it, unless that tag
-    may not be drawn; then the end of generation. The fixture's
-    end-of-sequence tag, and each tag its ``ends_generation`` lists, end a
-    generation too, as the engine reads them. It first hands ``before_reply`` the cache's text, so a
-    test can compare it with the template's render at that moment.
-
-    Every decode lands at the cache's end, and each cache edit asserts the
-    ability it needs, so a wrapper that cuts a cache which cannot cut, or
-    shifts one which cannot shift, fails here.
+    How it tokenizes, generates and checks each cache edit is in the cache-context guide.
 
     Args:
         fixture: The template to render with, as a test template's fixture
@@ -366,11 +341,9 @@ class FakeContext:
 
     def stated_render(self, messages, tools=None, *, generation_prompt=False, reasoning=False,
                       for_tools: bool | None = None):
-        """The render with the variables the fixture states for ``reasoning``, and an effort level it names, none of them read off the template, and not recorded.
+        """The render with the variables the fixture states for ``reasoning`` and an effort level, not recorded.
 
-        A conversation begun with tools, which ``for_tools`` says and which
-        ``tools`` decides where it is ``None``, is written with the fixture's
-        template for tools, where it gives one.
+        ``for_tools``, or ``tools`` where that is ``None``, picks the fixture's template for tools, where it gives one.
         """
         for_tools = bool(tools) if for_tools is None else for_tools
         model = self._models.get(TOOL_USE_TEMPLATE if for_tools else None, self._model)
@@ -457,7 +430,10 @@ class FakeContext:
 
     # ----- the model -------------------------------------------------------------
     def sampled_tokens(self, sampling, withheld_tokens):
-        """The next scripted call where its opening may be drawn, else the next scripted reply, else the default one; then the template's closing tag, unless it is withheld, and the end of generation."""
+        """The next scripted call, else the next scripted reply without the tokens withheld, else the default one.
+
+        Then the template's closing tag, unless it is withheld, and the end of generation.
+        """
         self.samplings.append(sampling)
         if any(self.ends_generation(token) for token in withheld_tokens):
             # Kept from ending, the model writes on, and never ends here.

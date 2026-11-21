@@ -1,15 +1,6 @@
 """A conversation as the messages its template is given, and a cache kept holding the template's render of them.
 
-The template renders the conversation, split by a marker render into its own
-text and the caller's; a turn that called tools is held in place of the
-template's version of it as the tokens it was generated as. The cache is
-compared with that target token by token, a stretch the target no longer holds
-is removed and the rest shifted, and everything from the first token that
-differs is decoded again. The render for the next question is decoded after
-each reply, with a stand-in where the question goes, so a question needs only
-its own tokens decoded before its reply starts; where the template writes the
-newest exchanges and the oldest kept ones the same in a render of them alone,
-only those are rendered. See docs/decisions/0001-the-cache-holds-the-templates-render.md, docs/decisions/0005-every-caller-text-is-placed-by-a-marker-render.md and docs/decisions/0026-renders-are-windows-of-the-newest-exchanges.md.
+See docs/decisions/0001-the-cache-holds-the-templates-render.md and the records it names.
 """
 
 from __future__ import annotations
@@ -60,14 +51,7 @@ _log = logging.getLogger(__name__)
 class RenderedCache:
     """One conversation's messages, as its template is given them, and the cache holding their render.
 
-    Every method expects the caller to hold the conversation's lock, except
-    :meth:`conversation`, :meth:`generated_turns`, :meth:`published_pending_calls`,
-    :meth:`published_total_tokens`, :meth:`published_turn_open`,
-    :meth:`published_awaits_reply` and :meth:`ensure_can_reply`, which read a
-    copy published after each change.
-    Each action leaves the cache equal to the template's render of the
-    messages, a turn that called tools held as it was generated, or, where it
-    raises, the conversation and the cache as they were before it.
+    Every method needs the conversation's lock, except those that read the copy published after each change.
     """
 
     def __init__(self, context, templates: ResolvedTemplates, config: Config) -> None:
@@ -147,7 +131,7 @@ class RenderedCache:
         return self._published.total_tokens
 
     def published_awaits_reply(self) -> bool:
-        """Whether a reply without a question would answer something, from one publication: the newest message is a question, or a turn's results are all in; safe to read unlocked."""
+        """Whether a reply without a question would answer something: a question last, or a turn's results all in; unlocked."""
         published = self._published
         if published.turn_open:
             return not published.pending_calls
@@ -264,16 +248,7 @@ class RenderedCache:
               generated_turns: dict | None, unreadable_result: dict) -> None:
         """Begin again from ``history``, Chat Completions messages, the newest of them that fit in half the context kept.
 
-        A history that ends on a call keeps it owed a result, and the cache
-        holds the render only as far as the results cannot change it.
-        ``tools`` other than ``None``, even empty, writes the conversation with
-        the model's template for tools. Each turn of ``generated_turns``, as
-        :meth:`conversation` gives one, that the history still holds is put
-        back as the conversation held it and kept as the tokens it was
-        generated as, where they are this model's; a call that could not be
-        read that no such turn holds is left out, with its result. A call that
-        could not be read and is owed a result next is answered with
-        ``unreadable_result``, as every later one is.
+        How tools, generated turns and unreadable calls are taken is in the actions guide.
 
         Raises:
             ContextOverflowError: If the system prompt and its declarations leave
@@ -407,7 +382,10 @@ class RenderedCache:
             self._log_begin(sum(m["role"] != "system" for m in history), generated_turns)
 
     def _keep_newest_history(self, cached: list[dict]) -> None:
-        """Keep the newest of the history being begun that fits under the eviction threshold where the cache holds the oldest of it already, as a conversation this one goes on with, else within half the context; the rest is recorded as evicted."""
+        """Keep the newest of the history being begun that fits its room; the rest is recorded as evicted.
+
+        The room is the eviction threshold where the cache holds its oldest already, else half the context.
+        """
         given, limit = list(self._state.messages), self._config.evict_above_tokens
         # Each search starts from a count near its answer: what the cache holds, then what fits
         # under the threshold, which a smaller bound never exceeds.
@@ -425,7 +403,10 @@ class RenderedCache:
         self._eviction.record(history_count(given), "half_context")
 
     def _log_begin(self, n_given: int, generated_turns: dict | None) -> None:
-        """Say once what ``begin`` left out of a history of ``n_given`` messages beyond the oldest, which the eviction says, and of the generated turns it was given; nothing where it kept them all as given. See docs/decisions/0036-one-report-of-what-an-action-changed.md."""
+        """Say once what ``begin`` left out of a history of ``n_given`` messages, and of its generated turns, beyond the oldest.
+
+        See docs/decisions/0036-one-report-of-what-an-action-changed.md.
+        """
         changes, said = self._state.changes, []
         if changes.n_left_out_calls:
             said.append(f"left out {changes.n_left_out_calls} call(s) that could not be read, "
@@ -632,7 +613,10 @@ class RenderedCache:
             self._state.changes = changes
 
     def _answers_first(self, question: str, reply_tokens: int) -> bool:
-        """Whether ``question`` is answered before the drop the newest reply left: on a cache that cannot shift, which decodes the history it keeps again, without tools, whose results need room no cap bounds, where the cache holds everything it is to hold and the question and a reply of ``reply_tokens`` fit beside it."""
+        """Whether ``question`` is answered before the drop the newest reply left, on a cache that cannot shift.
+
+        Only without tools, the cache current, and room for the question and a reply of ``reply_tokens``.
+        """
         if self._context.can_shift or self._state.tools or not self._memory.is_current \
                 or self._eviction.too_many() \
                 or self._targets.length(self._state.messages, generation_prompt=False) \
@@ -662,10 +646,7 @@ class RenderedCache:
     def roll_back(self, brings_up: bool = True) -> None:
         """Put the conversation and the cache back as the open attempt found them.
 
-        The cache is brought back at once where it is known; without
-        ``brings_up``, only as far as one part of a long decode, as an
-        interrupt leaves it. One a failure left unknown, and the rest of such a
-        decode, is brought back by the next action.
+        Without ``brings_up``, the cache is brought back only one part of a long decode; the next action does the rest.
         """
         if self._attempt is not None:
             self._go_back_to(self._attempt, brings_up)
@@ -683,12 +664,7 @@ class RenderedCache:
     def add(self, role: str, text: str, answers_first: Sequence[tuple[str, object]] = ()) -> None:
         """Decode a message without a reply after it, the oldest exchanges dropped for it where needed.
 
-        A question is put in the stand-in's place as :meth:`ask` puts one, the
-        generation prompt after it: within the room left for a reply, the
-        conversation over ``evict_above_tokens`` until its reply settles, unless
-        ``max_history_exchanges`` is reached first. A question writes
-        ``answers_first`` before it, as :meth:`generation` does, within the
-        same change.
+        A question goes where :meth:`ask` puts one; when its evictions come is in the actions guide.
 
         Raises:
             ValueError: If no conversation was begun, an assistant message is
@@ -786,10 +762,7 @@ class RenderedCache:
 
     # ----- generating -------------------------------------------------------------------
     def generate(self, max_generated_tokens: int, generated: GenerationAccumulator, **options):
-        """Stream one generation of at most ``max_generated_tokens`` from the cache's end; what it decodes is held as the cache's.
-
-        It stops short of ``max_generated_tokens`` where the context leaves less room
-        beside the closing after the reply.
+        """Stream one generation of at most ``max_generated_tokens`` from the cache's end, less where the context leaves less.
 
         Raises:
             ValueError: If no conversation was begun, the open turn still owes
@@ -828,15 +801,7 @@ class RenderedCache:
                    max_thought_tokens: int | None = None) -> Generator[str, None, Reply]:
         """Generate one reply from the cache's end, stream what it shows, and record what it left, as a Reply.
 
-        Without ``text``, it goes on with the open turn, adding no message of
-        its own, or else answers the newest message, which must be a user
-        message already written. A call it stops on leaves the turn open for a
-        result.
-
-        Every exit before the generation's first token, by a cancel or a
-        failure, leaves the conversation and the cache as this call found
-        them, the history its question evicted included; so does a failure
-        while the reply is recorded. See docs/decisions/0033-one-undo-path.md.
+        An exit before the first token leaves everything as it was; see docs/decisions/0033-one-undo-path.md.
 
         Args:
             text, stop, cancel: As :meth:`~llama_cpp_conversation.wrapper.ChatWrapper.reply`.
@@ -1011,8 +976,7 @@ class RenderedCache:
                           unreadable_result: dict) -> list[ToolCall]:
         """Record what one generation left and settle the cache after it; the calls it read.
 
-        A call that could not be read ends the generation as
-        ``"unreadable_tool_call"``, and is answered with ``unreadable_result``.
+        An unreadable call ends it as ``"unreadable_tool_call"`` and is answered with ``unreadable_result``.
         """
         calls = self._read_calls(generated)
         called = generated.stop_reason == "tool_call"
@@ -1040,7 +1004,7 @@ class RenderedCache:
         return self._with_usable_ids(calls) if any(call.id for call in calls) else calls
 
     def _with_usable_ids(self, calls: list[ToolCall]) -> list[ToolCall]:
-        """``calls``, each keeping the id the model wrote for it where that id is new to the conversation and the template writes the call under it; any other is given an id of its own."""
+        """``calls``, each keeping the id the model wrote where it is new and the template writes it; any other gets its own."""
         taken = {c["id"] for m in self._state.messages for c in m.get("tool_calls") or ()}
         taken |= self._state.left_out_calls
         usable = []
@@ -1058,17 +1022,9 @@ class RenderedCache:
     def record_reply(self, answer: str, thought: str, calls: list[ToolCall],
                      called: bool, unreadable_result: dict, stopped: bool = False,
                      in_thought: bool = False) -> None:
-        """Record what the newest generation produced, then settle the cache after it.
+        """Record what the newest generation produced, ending the attempt :meth:`open_attempt` opened, and settle the cache.
 
-        A turn that called tools keeps the tokens it was generated as, and stays
-        open while a call is owed a result; any other reply closes the turn. A
-        reply the template refuses to write, or that produced nothing it writes, is
-        taken back with its request. Where the generation failed, the cache is left
-        to be decoded again by the next action.
-
-        Recording the reply ends the attempt :meth:`open_attempt` opened; where
-        that raises, the caller puts the attempt back, and a fault after it keeps
-        the reply.
+        A reply the template cannot write, or that produced nothing it writes, is taken back with its request.
 
         Args:
             thought: The reply's thought, given to the template as its own to
@@ -1223,7 +1179,10 @@ class RenderedCache:
                 return
 
     def _calls_to_report(self, called_before: set[str]) -> list[ToolCall]:
-        """The calls this generation made, in the order the model wrote them: those still owed, and the unreadable ones answered at once; ``called_before`` holds the ids of the calls made before it."""
+        """The calls this generation made, in order: those still owed, and the unreadable ones answered at once.
+
+        ``called_before`` holds the ids of the calls made before it.
+        """
         owed = {call.id: call for call in self.pending_calls}
         made = []
         for message in _since_question(self._state.messages):
@@ -1235,7 +1194,7 @@ class RenderedCache:
         return made + list(owed.values())
 
     def _answer_unreadable_owed(self) -> bool:
-        """Answer each call still owed that could not be read, while one is next in order, with the failure the model is told; whether the turn closed instead, for want of room for it."""
+        """Answer each unreadable call still owed, while one is next, with the failure; whether the turn closed for want of room."""
         answering_variant = LoopVariant("answering unreadable calls")
         while self.pending_calls and self.pending_calls[0].status == "unreadable" \
                 and self._state.unreadable_result is not None:
@@ -1275,10 +1234,7 @@ class RenderedCache:
     def close_unanswered(self) -> None:
         """Close the open turn where no room is left to answer its newest calls, as the reply cap closes one.
 
-        The newest reply is kept without those calls, its tokens as generated,
-        and the results already written for them are taken out again; where the
-        template writes nothing of what is left of it, it is taken back with its
-        request, as an empty reply is.
+        The reply is kept without those calls and their results, or taken back where nothing of it is written.
         """
         with self._action():
             calling = max(i for i, m in enumerate(self._state.messages) if m.get("tool_calls"))
@@ -1313,13 +1269,7 @@ class RenderedCache:
     def add_result(self, call_id: str, result) -> None:
         """Record what the oldest owed call returned, then, after the last one, decode the prompt for the reply.
 
-        A result too long for the room left drops the oldest exchanges first,
-        as a question does, the turn it answers kept whole. Where it still
-        cannot fit, it is cut, :data:`RESULT_CUT_NOTE` after it telling the
-        model how much was kept, and its call is noted in :attr:`results_cut`.
-        It is written whole where each result still owed after it still fits
-        empty; otherwise the room left keeps space for each of them as that
-        note with nothing kept, unless not even this one would fit then.
+        How a result too long for the room is cut is in the tool-calling guide.
 
         Raises:
             ValueError: If no call is waiting, this is not the one owed, the
@@ -1377,7 +1327,7 @@ class RenderedCache:
             ValueError: If no conversation was begun, a reply is open, which
                 a newest reply that holds a call leaves, the newest message is
                 not a reply, ``keep_text`` is not a prefix of its text, or the
-                template does not write the reply shortened to it, or the
+                template does not write the reply truncated to it, or the
                 tokens of a reply kept as generated hold more than its text.
         """
         with self._action():
@@ -1474,7 +1424,10 @@ class RenderedCache:
             self._memory.rest()
 
     def _drop_over_after_a_reply(self, limit: int) -> bool:
-        """Drop the oldest exchanges while the conversation is over ``limit`` or holds too many, the newest kept until the next question comes, which a reader may still cut back, unless it does not fit the context; whether any went."""
+        """Drop the oldest exchanges while over ``limit`` or too many, the newest kept until the next question; whether any went.
+
+        The newest is kept so that a reader may still truncate it, unless it does not fit the context.
+        """
         dropped = self._drop_while_over(limit, generation_prompt=False)
         if self._targets.length(self._state.messages, generation_prompt=False) > self._config.context_size:
             dropped = self._drop_while_over(self._config.context_size, generation_prompt=False,
@@ -1505,7 +1458,7 @@ class RenderedCache:
         return min(self._config.evict_above_tokens, self._max_prompt_tokens)
 
     def _drop_while_over(self, limit: int, generation_prompt: bool, **options) -> bool:
-        """Drop the oldest exchanges once the conversation is over ``limit`` or holds too many, as :meth:`Eviction.drop_while_over` does, in windows of the oldest exchanges first where they stand for the render; whether any went."""
+        """Drop the oldest exchanges once over ``limit`` or too many, in windows first where they stand; whether any went."""
         went = False
         if not options.get("newest_too"):
             went = self._drop_in_windows(limit, generation_prompt,
@@ -1516,7 +1469,10 @@ class RenderedCache:
 
     def _drop_in_windows(self, limit: int, generation_prompt: bool, counts_exchanges: bool,
                          beside_open_turn: bool) -> bool:
-        """Drop the oldest exchanges as :meth:`Windows.drop_in` does, each checked against a render of the oldest two and removed from the cache, where a window of the newest stands for the rest; whether any went."""
+        """Drop the oldest exchanges as :meth:`Windows.drop_in` does, each checked against a render of the oldest two.
+
+        Only where a window of the newest stands for the rest; whether any went.
+        """
         # A cache that cannot shift decodes the rest again after a drop, which costs more
         # than the render; it drops as far as the whole render says, once.
         if not self._eviction.keeps_the_rest:
@@ -1718,7 +1674,7 @@ def _reported_calls(generated: GenerationAccumulator, pending: list[ToolCall]) -
 
 
 def _reuse_alike(messages: list[dict], held: list[dict]) -> int:
-    """Put each message of ``held`` in the place of the one of ``messages`` there, from the first on, while the two say the same and keep the same turn as generated; how many were put."""
+    """Put each message of ``held`` in place of the one of ``messages`` there, while the two say and keep the same; how many."""
     count = 0
     for given, own in zip(messages, held):
         given_turn, own_turn = given.get(GENERATED_TURN), own.get(GENERATED_TURN)

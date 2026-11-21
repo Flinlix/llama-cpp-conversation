@@ -1,9 +1,4 @@
-"""What one model's chat template supports, read from its renders once, while a wrapper is built, and checked.
-
-The tags around a turn and a thought, where a reply ends, and the four steps
-tool calling needs. :class:`TemplateReader` makes :class:`TemplateProperties`;
-nothing here touches a conversation.
-"""
+"""What one model's chat template supports, read from its renders once while a wrapper is built, and checked."""
 
 from __future__ import annotations
 
@@ -150,7 +145,7 @@ class TemplateReader:
                     messages, generation_prompt=prompt, variables=self._variables)))
 
     def _writes_reply_as_prompted(self) -> bool:
-        """Whether, with reasoning off, a past reply stands where its question's generation prompt left it, as the text it was generated as: the cache then never goes back behind it."""
+        """Whether, with reasoning off, a past reply stands as generated, right after its question's generation prompt."""
         prompted = self._render([{"role": "user", "content": _PROMPT}], generation_prompt=True,
                                 reasoning=False)
         past = self._render(list(_PAST_REPLY), reasoning=False)
@@ -251,11 +246,7 @@ class TemplateReader:
         return dataclasses.replace(fragments, rewrites=rewrites) if rewrites else fragments
 
     def _validate_template(self) -> None:
-        """Ensure the closing after a reply opens with one of this model's own tags.
-
-        Where the closing is empty, the tag that opens the next turn must end a
-        generation instead.
-        """
+        """Ensure the closing after a reply opens with one of this model's tags, or, empty, that the next turn's tag ends one."""
         closing = self._fragments.assistant_suffix.strip()
         if not closing:
             self._ensure_next_turn_ends_a_reply(reasoning=False)
@@ -305,7 +296,10 @@ class TemplateReader:
             "cannot be used")
 
     def _after_a_reply(self, past: str, reasoning: bool) -> str | None:
-        """``past``, the render of a question, a reply and a question, from where the reply ends: after its text, or after its turn's opening, as a reply is prompted in either mode, where the template leaves the text out; ``None`` where neither stands."""
+        """``past``, a render of a question, a reply and a question, from where the reply ends; ``None`` where that cannot be told.
+
+        That is after its text, or after its turn's opening where the template leaves the text out.
+        """
         if _NEXT in past:
             return past.split(_NEXT, 1)[1]
         asked = past.find(_PROMPT)
@@ -328,10 +322,7 @@ class TemplateReader:
         return first if tokens and tokens[0] == first else None
 
     def _check_what_generation_reads(self) -> None:
-        """Ensure the tags read around a generation are the ones the template writes.
-
-        In each reasoning mode: the generation prompt ends the render of a
-        question, and the closing after a reply follows a past reply's text.
+        """Ensure, in each reasoning mode, the tags read around a generation are the ones the template writes.
 
         Raises:
             ValueError: If the template writes either otherwise.
@@ -468,12 +459,7 @@ class TemplateReader:
         return closing[:shared] + text
 
     def _call_closer(self, fragments: ToolCallFragments) -> int | None:
-        """The tag that ends a call.
-
-        The last tag between two calls of one turn, where the template writes one
-        there that ``call_close`` also holds; otherwise the first tag of
-        ``call_close``.
-        """
+        """The tag that ends a call: the last tag between two calls that ``call_close`` also holds, else its first."""
         separator = extract_call_separator(self._read_as_probes,
                                            fragments.call_open)
         tags = self._tags_in(separator or "")
@@ -507,11 +493,9 @@ class TemplateReader:
         return self._declares_before_newest_turn or self._declares_in_system_turn()
 
     def _resolve_declaration_variables(self) -> dict:
-        """A template variable that puts tool declarations into the system turn, where needed.
+        """A template variable that puts tool declarations into the system turn, where needed; empty where none does.
 
-        One the template reads qualifies where setting it changes nothing in a
-        conversation without tools; empty where the system turn declares them
-        already, or no variable makes it.
+        It qualifies where setting it changes nothing in a conversation without tools.
         """
         if not self._calls_marked or self._declares_in_system_turn():
             return {}
@@ -582,10 +566,7 @@ class TemplateReader:
         return not call_open or next(written).count(call_open) <= next(written).count(call_open)
 
     def _system_turn(self, tools: list[dict] | None) -> str | None:
-        """The system turn rendered ahead of a user turn, which some templates require.
-
-        Cut where the user turn begins, so whatever the template writes between
-        the two belongs to the system turn.
+        """The system turn rendered ahead of a user turn, cut where the user turn begins.
         """
         rendered = self._render(
             [{"role": "system", "content": _PROMPT},

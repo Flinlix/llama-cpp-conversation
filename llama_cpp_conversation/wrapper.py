@@ -1,9 +1,6 @@
 """ChatWrapper: the public API over one conversation, its cache holding what the model's template writes.
 
-The conversation is kept as the messages a chat template is given, and the
-cache as the template's render of them, decoded only where it differs from
-what the cache holds. See :mod:`llama_cpp_conversation.rendered_cache` and
-docs/decisions/0001-the-cache-holds-the-templates-render.md.
+See docs/decisions/0001-the-cache-holds-the-templates-render.md.
 """
 
 from __future__ import annotations
@@ -40,12 +37,9 @@ _log = logging.getLogger(__name__)
 
 @raising_library_errors_only
 class ChatWrapper:
-    """Stateful single-conversation chat over a cache context, with KV reuse.
+    """Stateful chat over one conversation, kept in a cache context and decoded only where it changed.
 
-    Once built, every public action raises only the library's own errors
-    (``LIBRARY_ERRORS`` in ``llama_cpp_conversation.errors``), each naming the argument and
-    the cause; a refused action changes nothing, and a failed reply keeps only
-    what it had produced.
+    Every public action raises only the library's errors; see the actions guide for what each means.
     """
 
     # ----- setting up ----------------------------------------------------------
@@ -58,8 +52,7 @@ class ChatWrapper:
     ) -> None:
         """Load the model, read its add-on file, resolve the chat template, and validate it.
 
-        The add-on file and the sampling the model recommends are read the
-        same way for a context of your own as for one this loads.
+        A context of your own has its add-on file and recommended sampling read the same way.
 
         Args:
             config: The configuration; :class:`~llama_cpp_conversation.config.Config`'s
@@ -159,11 +152,9 @@ class ChatWrapper:
               tools: Iterable[ToolSpec] | None = None, *,
               reasoning: bool = False, reasoning_level: str | None = None,
               generated_turns: GeneratedTurns | None = None) -> Report:
-        """Begin the conversation, or begin it again: prefill the system prompt and recent history, decoding only where they differ from what the cache holds.
+        """Begin the conversation, or begin it again, decoding only where it differs from what the cache holds.
 
-        Every other action refuses until this has run, because only this
-        prefills the sequence opener and the system prompt. The previous
-        conversation is left intact on every refusal here.
+        Every other action refuses until this has run; a refusal here leaves the previous conversation intact.
 
         Args:
             messages: The conversation so far, oldest first, as Chat Completions chat
@@ -262,7 +253,8 @@ class ChatWrapper:
                 such as ``developer``, each named; if ``tools`` names one tool
                 twice; if two calls of the history carry one id, or a call has
                 none; if a result has no ``tool_call_id``, is no text, answers
-                no call owed one, or not the oldest; or if ``generated_turns``
+                no call owed one, or not the oldest; if ``reasoning_level`` is
+                given without ``reasoning=True``; or if ``generated_turns``
                 is not what :meth:`conversation` gives, naming
                 ``generated_turns``.
             TemplateRefusedError: If the template refuses to write the
@@ -328,15 +320,7 @@ class ChatWrapper:
     def inject(self, text: str, role: str = "user") -> Report:
         """Prefill one message as context without generating.
 
-        A question goes where the next one was prepared for, as :meth:`reply`
-        puts one, and the oldest exchanges are evicted for it after its reply.
-        An assistant message, or a question once ``max_history_exchanges`` is
-        reached, evicts them first, until it fits inside both eviction limits.
-        A question closes a turn a call left open first, as :meth:`reply`
-        with ``text`` does, and joins a question no reply follows where the
-        template writes no two in a row, or, where the two joined would not
-        fit beside the system prompt, takes its place, the unanswered one
-        counted as evicted.
+        When the oldest exchanges are evicted for it, and how a question joins one, is in the actions guide.
 
         Args:
             text: The message's text.
@@ -390,16 +374,7 @@ class ChatWrapper:
               sampling: Sampling | None = None) -> ReplyStream[str | ToolCall]:
         """Generate the reply, streaming it as it is generated.
 
-        A conversation that cannot take the reply is refused at once, before a
-        stream is returned; everything else waits for the first iteration, the
-        headroom check included, and the conversation is checked again there,
-        since another thread may change it in between. Closing the stream
-        early records what was generated, so the next generation stays valid;
-        a call already handed over stays owed, its turn open for the result.
-        The stream must be driven from one thread at a time; to interrupt from
-        another, pass ``cancel``. An abandoned stream holds the wrapper's lock
-        until it is collected, so exhaust it, close it, use it in a ``with``,
-        or call :meth:`ReplyStream.finish`.
+        What is refused at once and what at the first read, and how to end a stream, is in the guides.
 
         Args:
             text: The user request, tokenized with special-token parsing off.
@@ -572,7 +547,10 @@ class ChatWrapper:
     def _noting_each_reader(self, steps: Generator[str | ToolCall, None, Reply],
                             stream_ref: list[Callable[[], ReplyStream | None]]
                             ) -> Generator[str | ToolCall, None, Reply]:
-        """``steps``, the thread that takes each step noted as the one holding the wrapper, while the reply holds it; the stream ``stream_ref`` names noted as waiting for its reader while it does."""
+        """``steps``, each step's thread noted as the one holding the wrapper while the reply holds it.
+
+        The stream ``stream_ref`` names is noted as waiting for its reader meanwhile.
+        """
         holds = False
         try:
             while True:
@@ -604,7 +582,10 @@ class ChatWrapper:
             raise
 
     def _start_settling(self) -> None:
-        """Have the work a reply left done on a thread of its own, once the reply has ended, so that its stream ends at once; the next action does it first where that thread has not yet."""
+        """Have the work a reply left done on a thread of its own once the reply has ended, so that its stream ends at once.
+
+        The next action does it first where that thread has not yet.
+        """
         if self._conversation.settle_due:
             # Not a daemon: a process that ends right after a reply waits for it, rather than
             # tearing the model down under its decode.
@@ -615,7 +596,10 @@ class ChatWrapper:
                 pass                # none can start, as at shutdown: the next action does the work
 
     def _settle_when_free(self) -> None:
-        """Do the work a reply left, holding the wrapper, leaving a long decode to an action that waits for it; where the wrapper stays held longer than :data:`_AFTER_REPLY_WAIT_S`, the next action does that work."""
+        """Do the work a reply left, holding the wrapper, leaving a long decode to an action that waits for it.
+
+        Where the wrapper stays held longer than :data:`_AFTER_REPLY_WAIT_S`, the next action does that work.
+        """
         time.sleep(_AFTER_REPLY_PAUSE_S)    # the reader first takes in the stream's end
         # An action that took the wrapper meanwhile did the work first; it is not waited for.
         if not self._conversation.settle_due or not self._lock.acquire(timeout=_AFTER_REPLY_WAIT_S):
@@ -634,7 +618,10 @@ class ChatWrapper:
     def _replying(self, text: str | None, given: ToolCallPolicy | ToolRegistry | None,
                   max_calls: int | None, begun: int, **options
                   ) -> Generator[str | ToolCall, None, Reply]:
-        """The reply :meth:`reply` describes, its policy chosen under the lock: ``given``, else the open turn's; refused where a begin has replaced the conversation it was asked of, ``begun`` begins in."""
+        """The reply :meth:`reply` describes, its policy chosen under the lock: ``given``, else the open turn's.
+
+        Refused where a begin has replaced the conversation it was asked of, which ``begun`` names.
+        """
         with self._held(cancel=options["cancel"], question=text,
                         reply_tokens=self._rounds.reply_cap(options["max_reply_tokens"])) as held:
             if not held:
@@ -673,11 +660,9 @@ class ChatWrapper:
 
     def _keep_turn(self, given: ToolCallPolicy | ToolRegistry | None,
                    policy: ToolCallPolicy | ToolRegistry, budget: CallBudget) -> None:
-        """Note what a reply whose generation has started leaves its turn; the lock must be held.
+        """Note what a reply whose generation has started leaves its turn: its policy and its call budget.
 
-        A reply that opens a turn starts it with ``policy``; one going on with
-        a turn the history opened gives it ``given``, where it gives one. The
-        turn keeps ``budget``, the calls it may still run.
+        A turn the history opened takes ``given`` where given; the lock must be held.
         """
         conversation = self._conversation
         if not conversation.turn_open or (conversation.turn_policy is None and given is not None):
@@ -687,15 +672,7 @@ class ChatWrapper:
     def inject_tool_result(self, call_id: str, result: object) -> Report:
         """Hand the model what the tool it called returned; what that changed beyond what was asked.
 
-        Written where this model's own template writes a result, inside the
-        turn the call left open, with special-token parsing off. A result too
-        long for what is left of the context evicts the oldest exchanges
-        first, the open turn kept whole; one still too long is cut, a note at
-        its end telling the model how much was kept, and the next reply lists
-        its call in ``Reply.tool_results_cut``. Where not even a result cut to
-        nothing fits, the turn closes on what the model wrote, as a reply that
-        answers its own calls closes one, and ``turn_open`` is then false. See
-        docs/guide/tool-calling.md.
+        How a result too long for the context is cut, or closes the turn, is in the tool-calling guide.
 
         Args:
             call_id: The id of the call being answered, as it was handed to
@@ -756,21 +733,14 @@ class ChatWrapper:
 
     # ----- truncating the last reply ------------------------------------------
     def truncate_last_reply(self, keep_text: str) -> None:
-        """Shorten the newest assistant message to ``keep_text``.
+        """Truncate the last reply to ``keep_text``, what its reader read or heard of it.
 
-        For a reply that was cut short where it was being read or heard: the
-        model is left holding only what the reader got. The cache is cut back
-        to where the shortened reply differs and decoded again from there.
+        The cache is cut back to where the truncated reply differs and decoded again from there.
 
         Args:
-            keep_text: What stays, a prefix of the message's text, or of the
-                text its reply was streamed as, which after a tool's result
-                may open with a blank line, or the whole turn's where one
-                stream showed the text before its call too. A cut inside the
-                text before the turn's call cuts the newest reply to nothing;
-                the text a call followed stays. A cut that reads as either is
-                read as one of the newest reply. The whole text changes
-                nothing.
+            keep_text: A prefix of the reply's text, or of the text its stream
+                showed; see the actions guide for a reply that ran a call. The
+                whole text changes nothing.
 
         Raises:
             ArgumentTypeError: If ``keep_text`` is not a ``str``.
@@ -781,8 +751,8 @@ class ChatWrapper:
                 for it.
             InvalidArgumentError: If ``keep_text`` is not a prefix of its text.
             TemplateRefusedError: If the template does not write the reply
-                shortened to it, as one that writes no empty reply does not
-                write it shortened to ``""``; or, for the reply that ends a
+                truncated to it, as one that writes no empty reply does not
+                write it truncated to ``""``; or, for the reply that ends a
                 turn that called tools, if its tokens as generated hold more
                 than its text, such as a call that went for want of room.
         """
@@ -805,18 +775,15 @@ class ChatWrapper:
     def config(self) -> Config:
         """The configuration this wrapper runs with, its limits included.
 
-        A sampling setting left unset holds the value the model supplies,
-        through its add-on file or its own recommendation, whether the wrapper
-        loaded the model itself or was given a cache context of your own.
+        A sampling setting left unset holds the value the model supplies, through its add-on file or its GGUF.
         """
         return self._config
 
     @property
     def can_shift(self) -> bool:
-        """Whether eviction can shift surviving KV in place.
+        """Whether eviction can shift surviving KV in place; ``False`` means a cut, a saved state or a decode instead.
 
-        ``False`` means a cut, a saved state or decoding the survivors again
-        instead. See docs/decisions/0022-eviction-drops-whole-oldest-exchanges.md.
+        See docs/decisions/0022-eviction-drops-whole-oldest-exchanges.md.
         """
         return self._context.can_shift
 
@@ -856,52 +823,23 @@ class ChatWrapper:
         return True
 
     def conversation(self) -> Conversation:
-        """Everything :meth:`begin` takes to begin the conversation the cache holds again, by its parameter names.
+        """Everything :meth:`begin` takes to begin the conversation again: ``messages``, ``tools``, ``reasoning``, ``reasoning_level`` and ``generated_turns``.
 
-        ``messages``, ``tools``, ``reasoning`` and ``generated_turns``, so
-        that ``begin(**chat.conversation())`` begins again as it was, a call
-        still owed a result owed again and, on the same model, each turn that
-        called tools as the tokens it was generated as.
-
-        ``messages`` is every message, the system message first where there
-        is one, in the Chat Completions form :meth:`begin` takes: a reply's text
-        ``None`` where it makes calls and says nothing, ``""`` where it does
-        neither, its thought under ``"reasoning_content"`` where the template
-        keeps it, and each call's arguments as compact JSON in their own
-        order; each result as the text the model read, cut with its note
-        where it was cut. A call the model wrote unreadably is left out with
-        its result, as :meth:`begin` leaves one out. Whatever :meth:`begin`
-        takes without leaving anything out, this gives back unchanged, apart
-        from the spelling of arguments, an empty text written as above, and two
-        questions in a row joined where the template writes no two.
-
-        ``generated_turns`` is ``None`` where no turn is kept as generated;
-        it is a JSON-ready dictionary, only meaningful to this model, holding
-        each such turn's tokens and its messages as the conversation holds
-        them, a call written unreadably and a thought included, and the
-        messages alone begin any model again. ``tools`` is every declaration,
-        and ``None`` where the conversation was begun without tools. Safe from any
-        thread, including while another is mid-generation: all of it is read
-        as the newest finished change left it.
+        Safe from any thread; each part's form is in the actions guide, under "Reading the conversation back".
         """
         return self._conversation.conversation()
 
     def generated_turns(self) -> GeneratedTurns | None:
-        """What :meth:`conversation` gives as ``generated_turns``, without copying the messages; ``None`` where no turn is kept as generated.
+        """What :meth:`conversation` gives as ``generated_turns``, without copying the messages; ``None`` where none is kept.
 
-        Each turn is found again by its messages wherever they stand, so a
-        reading taken now still serves messages a caller adds to or drops from
-        later. Safe from any thread, as :meth:`conversation` is.
+        Each turn is found again by its messages, so a reading taken now still serves messages changed later.
         """
         return self._conversation.generated_turns()
 
     def capabilities(self, *, tools: bool) -> Capabilities:
         """What :meth:`begin` accepts for a conversation begun with ``tools`` given, even empty, or without.
 
-        A model may ship a template of its own for a conversation that
-        declares tools; ``tools=True`` answers for that one and
-        ``tools=False`` for the default, each settled when the model loaded
-        and the same before and after any :meth:`begin`. Safe from any thread.
+        Settled when the model loaded, the same before and after any :meth:`begin`; safe from any thread.
         """
         _ensure_bool(tools, "tools")
         return self._templates.capabilities(tools)
@@ -910,11 +848,7 @@ class ChatWrapper:
     def turn_open(self) -> bool:
         """Whether a reply is unfinished, because a call is owed a result or the results wait for the reply after them.
 
-        True from a call until :meth:`reply` closes the turn, or a question
-        closes it, or a result finds no room. While it is, only an assistant
-        message and a shortened reply are refused; a question closes the turn
-        first. Safe from any thread, as :meth:`conversation` is: as the newest
-        finished change left it.
+        While it is, an assistant message and a truncated reply are refused; a question closes the turn first.
         """
         return self._conversation.published_turn_open()
 
@@ -928,28 +862,17 @@ class ChatWrapper:
 
     @property
     def pending_calls(self) -> list[ToolCall]:
-        """The calls the model made that still wait for a result, oldest first.
+        """The calls the model made that still wait for a result, oldest first, each a copy that is the caller's.
 
-        Each is answered with :meth:`inject_tool_result`, in this order, and
-        :meth:`reply` goes on with the turn only once none is left. Safe from
-        any thread, as :meth:`conversation` is: the calls as the newest
-        finished change left them, each a copy that is the caller's to change.
+        Answer each with :meth:`inject_tool_result`, in this order; safe from any thread.
         """
         return self._conversation.published_pending_calls()
 
     # ----- lifecycle -----------------------------------------------------------
     def close(self) -> None:
-        """Free the underlying context and model. Idempotent and thread-safe.
+        """Free the context and model, a context of your own included; idempotent and thread-safe.
 
-        Waits for any in-flight generation; on the thread that reads an
-        unfinished reply, ends that reply first, as closing its stream does,
-        and from a tool that reply runs, is refused as any action is, changing
-        nothing. A reply asked for and not yet read raises once it is read.
-        Closes a context passed to the constructor as well. Every action after
-        close raises :class:`~llama_cpp_conversation.errors.OutOfOrderError` once its
-        arguments are checked;
-        :meth:`conversation` and the properties that say where it stands still
-        answer.
+        How it meets a reply still running, and what answers after it, is in the streams-and-threads guide.
         """
         try:
             # Through its stream, as the next action ends it, so that the stream keeps its
@@ -990,11 +913,9 @@ class ChatWrapper:
     @contextlib.contextmanager
     def _held(self, settles: bool = True, cancel=None, question: str | None = None,
               reply_tokens: int = 0):
-        """Hold the wrapper for one action, refusing one a tool the holding reply runs asks for; the work a reply left is done first, where ``settles``, or after the reply to ``question``, of at most ``reply_tokens``, where that waits less.
+        """Hold the wrapper for one action, first doing the work a reply left, where ``settles``, until its first part.
 
-        Where ``cancel`` is set, the work a reply left stops, and so does the
-        wait for the wrapper, which then yields ``False`` without holding it;
-        it yields ``True`` once the wrapper is held.
+        Yields ``True`` once held, ``False`` where ``cancel`` stopped the wait; ``question`` may wait less.
         """
         self._ensure_not_holding()
         if not self._acquire(cancel=cancel):
@@ -1012,7 +933,10 @@ class ChatWrapper:
 
     def _settle_due_work(self, cancel=None, question: str | None = None,
                          reply_tokens: int = 0) -> None:
-        """Do the work a reply left, where the thread for it has not yet, stopped where ``cancel`` is set, as :meth:`RenderedCache.settle` does before ``question`` and its ``reply_tokens``; the lock must be held. A failure is logged: it left the conversation as it was, and the cache to be decoded again."""
+        """Do the work a reply left, where its thread has not, stopped where ``cancel`` is set; the lock must be held.
+
+        A failure is logged: it left the conversation as it was, and the cache to be decoded again.
+        """
         if self._closed or not self._conversation.settle_due:
             return
         try:
@@ -1022,7 +946,10 @@ class ChatWrapper:
                          exc_info=True)
 
     def _acquire(self, timeout_s: float = -1, gives_way: bool = True, cancel=None) -> bool:
-        """Take the wrapper's lock, waiting at most ``timeout_s`` (``-1`` for no limit) and while ``cancel`` is unset; a reply that holds it unread for ``unread_reply_timeout_s`` is ended meanwhile, and the work after a reply gives way where ``gives_way``."""
+        """Take the wrapper's lock, waiting at most ``timeout_s`` (``-1`` for no limit) and while ``cancel`` is unset.
+
+        A reply held unread for ``unread_reply_timeout_s`` is ended meanwhile; the work after a reply gives way where ``gives_way``.
+        """
         if self._lock.acquire(blocking=False):
             return True
         with self._blocked, self._waiting if gives_way else contextlib.nullcontext():
@@ -1054,7 +981,10 @@ class ChatWrapper:
             self._unread_watch.start()
 
     def _end_unread_reply(self) -> None:
-        """End the reply that holds the wrapper unread for ``unread_reply_timeout_s``, while an action waits; look again later where none has yet. A failure is logged, on the timer's thread no caller reads."""
+        """End the reply that holds the wrapper unread for ``unread_reply_timeout_s`` while an action waits.
+
+        Looks again later where none has yet; a failure is logged, on a thread no caller reads.
+        """
         try:
             self._end_unread_reply_now()
         except Exception:
@@ -1079,7 +1009,9 @@ class ChatWrapper:
         self._watch_unread_reply(max(limit - unread_s, _UNREAD_WATCH_MIN_S))
 
     def _ensure_not_holding(self) -> None:
-        """End this thread's own reply where it holds the wrapper waiting for this thread to read on, and refuse an action a tool the holding reply runs asks for, which would wait for itself.
+        """End this thread's own reply where it holds the wrapper unread, and refuse an action a tool of that reply asks for.
+
+        Such an action would wait for itself.
 
         Raises:
             OutOfOrderError: Where a tool of the reply that holds the wrapper
@@ -1208,7 +1140,10 @@ def _ensure_bool(value, name: str) -> None:
 
 
 def _kept_of_the_newest(before: str, newest: str, keep_text: str) -> str:
-    """What of ``newest``, the newest reply's text, a reader kept who got ``keep_text`` of a stream that showed ``before`` first, the turn's earlier replies, or of one that showed only that reply."""
+    """What of ``newest``, the last reply's text, a reader kept who got ``keep_text`` of its stream.
+
+    ``before`` is the turn's earlier replies, where the stream showed them first.
+    """
     between = parting(before, newest)
     turn = before + between
     if before and keep_text.startswith(turn):

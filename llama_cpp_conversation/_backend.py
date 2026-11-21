@@ -1,8 +1,6 @@
-"""Adapter over llama-cpp-python's low-level API, resolved once per build.
+"""Adapter over llama-cpp-python's low-level API: each C call the wrapper needs, resolved once under one name.
 
-Each C symbol is resolved once, under the names it has had since the oldest
-release the package supports, and the rest of the package uses a single name
-for it. Only the primitives the wrapper needs are exposed.
+See docs/decisions/0019-engine-binding-floor-and-packaging.md.
 """
 
 from __future__ import annotations
@@ -277,10 +275,9 @@ class Backend:
     # ----- tokenize / detokenize ----------------------------------------
     def tokenize(self, vocab, text: str, add_special: bool,
                  parse_special: bool = True) -> list[int]:
-        """Convert ``text`` to token ids, prepending BOS when ``add_special``.
+        """Convert ``text`` to token ids, prepending BOS when ``add_special``; ``parse_special`` reads tags as tags.
 
-        ``parse_special`` decides whether tag text resolves to its control
-        token. See docs/guide/without-a-template.md, "Special tokens in message content".
+        See docs/guide/without-a-template.md, "Special tokens in message content".
         """
         raw = text.encode("utf-8")
         n_max = len(raw) + 16
@@ -295,11 +292,9 @@ class Backend:
         return list(buf[:n])
 
     def token_to_piece_bytes(self, vocab, token: int, buf=None) -> bytes:
-        """Return the raw UTF-8 bytes for ``token``, possibly a partial codepoint.
+        """Return the raw UTF-8 bytes for ``token``, possibly part of a codepoint, for an incremental decoder.
 
-        A codepoint can be split across tokens, so callers stream these bytes
-        through an incremental decoder. ``buf``, a buffer of
-        :data:`_PIECE_BYTES` characters, is written into where given.
+        ``buf``, a buffer of :data:`_PIECE_BYTES` characters, is written into where given.
         """
         if buf is None:
             buf = (ctypes.c_char * _PIECE_BYTES)()
@@ -357,8 +352,7 @@ class Backend:
                       frequency: float, presence: float) -> None:
         """Add the three repetition penalties over the last ``window_tokens``.
 
-        Where this build's function has a signature not known here, warns and adds
-        no stage.
+        Where this build's function has an unknown signature, warns and adds no stage.
         """
         leading = ((self._vocab_n_tokens(vocab),)
                    if self._penalties_take_vocab_size else ())
@@ -444,10 +438,9 @@ class Backend:
         return buffer
 
     def _free_state_buffer(self, size: int):
-        """A buffer of ``size`` bytes for a state: one an earlier state no longer holds, else a new one.
+        """A buffer of ``size`` bytes for a state: one no earlier state holds any longer, else a new one.
 
-        See docs/decisions/0024-saved-states-on-a-cache-that-cannot-cut.md. At most
-        one buffer nobody holds is kept beside those in use.
+        At most one unheld buffer is kept; see docs/decisions/0024-saved-states-on-a-cache-that-cannot-cut.md.
         """
         # A buffer only this list refers to holds no state anyone keeps.
         unheld = [b for b in self._state_buffers if sys.getrefcount(b) <= _REFS_OF_AN_UNHELD_BUFFER]
@@ -499,10 +492,9 @@ class Backend:
     # ----- decode / batch ------------------------------------------------
     def decode(self, ctx, token_ids: list[int], start_pos: int, seq: int,
                want_logits: bool, n_batch: int) -> None:
-        """Prefill ``token_ids`` at positions ``[start_pos, start_pos + n)``.
+        """Prefill ``token_ids`` at positions ``[start_pos, start_pos + n)``, in decode calls of ``n_batch`` tokens.
 
-        Chunked into ``n_batch``-sized decode calls. Logits are requested on the
-        last token only, and only when ``want_logits``.
+        Logits are asked for on the last token only, and only where ``want_logits``.
         """
         n = len(token_ids)
         if n == 0:

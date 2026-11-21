@@ -213,7 +213,7 @@ _OWN_KEYS = ("content", "reasoning_content", "thinking", "text", "name", "descri
 
 
 def _all_marked(value, mark):
-    """A call's arguments, each string in them marked."""
+    """A call's arguments, each string in them and each name of one marked."""
     if isinstance(value, str):
         return mark(value) if value else value
     if isinstance(value, dict):

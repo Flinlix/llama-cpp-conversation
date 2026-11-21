@@ -1,8 +1,6 @@
 """Recover how a model's own chat template writes a tool call, by rendering probes and comparing them.
 
-The tags a generated call sits between, what separates and closes calls, and
-how a call spells its name and arguments. Where a comparison proves nothing the
-answer is ``None`` rather than a guess. See docs/decisions/0037-a-calls-format-is-recovered-from-the-templates-renders.md.
+See docs/decisions/0037-a-calls-format-is-recovered-from-the-templates-renders.md.
 """
 
 from __future__ import annotations
@@ -84,10 +82,7 @@ def extract_tool_fragments(render: Render, fragments: TemplateFragments,
 
 
 def extract_call_separator(render: Render, call_open: str) -> str | None:
-    """What a template writes between one call's argument and the next call's opening.
-
-    It holds the first call's own ending, not what the template writes after
-    the last call.
+    """What a template writes between one call's argument and the next call's opening, the first call's ending included.
 
     Returns:
         The text, or ``None`` where the template does not open each call with
@@ -222,13 +217,19 @@ def extract_call_body(render: Render, call_open: str,
 
 
 def holds_the_probe_id(body: CallBody) -> bool:
-    """Whether a delimiter of ``body`` holds the id the probes' calls carried: an id written where it cannot be told from the text around it, unless a JSON key it stands under reads it."""
+    """Whether a delimiter of ``body`` holds the probes' call id, written where it cannot be told from the text around it.
+
+    An id under a JSON key that reads it does not count.
+    """
     return any(_PROBE_ID in delimiter for delimiter in dataclasses.astuple(body)
                if isinstance(delimiter, str))
 
 
 def _with_id_slot(body: CallBody, rendered_body, text: str) -> CallBody | None:
-    """``body`` with the call's id read where the template writes it between the name and the arguments; ``None`` where the id it writes there cannot be told from the delimiters around it."""
+    """``body`` with the call's id read where the template writes it between the name and the arguments.
+
+    ``None`` where that id cannot be told from the delimiters around it.
+    """
     if _PROBE_ID not in body.name_close:
         return body
     id_open, _, name_close = body.name_close.partition(_PROBE_ID)
@@ -242,8 +243,7 @@ def _with_id_slot(body: CallBody, rendered_body, text: str) -> CallBody | None:
 def _nested_forms(rendered_body, text: str, quote_open: str, quote_close: str) -> dict:
     """How a template writes an object's members and a list's items in their own delimiters.
 
-    Empty where the template writes nested values as JSON, as a literal, or in
-    no fixed form.
+    Empty where it writes nested values as JSON, as a literal, or in no fixed form.
     """
     value_at = text.index(_STRING)
     before, after = text[:value_at - len(quote_open)], text[value_at + len(_STRING) + len(quote_close):]
@@ -323,7 +323,10 @@ def extract_json_call_id_key(render: Render, keys: tuple[str, ...]) -> str | Non
 
 
 def extract_json_call_keys(render: Render) -> tuple[str, ...] | None:
-    """Where the template writes a call as one JSON object, its keys: the one naming the function, the one holding the arguments, then the others; ``None`` where it does not."""
+    """Where the template writes a call as one JSON object, its keys: the function's, the arguments', then the others.
+
+    ``None`` where it does not.
+    """
     arguments = {_KEY: _STRING}
     rendered = _render_call(as_probes_read(render), arguments)
     if rendered is None:

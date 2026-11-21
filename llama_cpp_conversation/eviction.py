@@ -1,8 +1,6 @@
 """Which of a conversation's oldest exchanges go, and when: at a begin, and once it no longer fits or holds too many.
 
-:class:`Eviction` holds no state of its own: it changes the conversation's
-state, and records there what went and why, so that an action put back puts
-back what an eviction did too. See docs/decisions/0022-eviction-drops-whole-oldest-exchanges.md.
+See docs/decisions/0022-eviction-drops-whole-oldest-exchanges.md.
 """
 
 from __future__ import annotations
@@ -28,7 +26,7 @@ EVICT_TO_FRACTION_WITHOUT_SHIFT = 0.5
 
 
 class Eviction:
-    """Drops the oldest exchanges of the conversation state it was made with, measured with ``rendering``, or with ``measure`` where a conversation as it stands is measured."""
+    """Drops the oldest exchanges of the conversation state it was made with, measured with ``rendering`` or ``measure``."""
 
     def __init__(self, rendering, config: Config, can_shift: bool,
                  state: ConversationState,
@@ -45,7 +43,7 @@ class Eviction:
 
     def keep_newest_history(self, bound: int, refused: Callable[[list[dict]], Exception],
                             start_from: int | None = None) -> int:
-        """Keep of a history to begin with the newest exchanges that render within ``bound``, and at least the newest; how many were kept, what went being the caller's to record.
+        """Keep of a history the newest exchanges that render within ``bound``, at least one; how many were kept.
 
         Args:
             start_from: How many are tried first, such as as many as a search
@@ -109,11 +107,9 @@ class Eviction:
 
     def drop_while_over(self, limit: int, generation_prompt: bool, newest_too: bool = False,
                         tokens_only: bool = False, beside_open_turn: bool = False) -> str | None:
-        """Drop the oldest exchanges once the conversation renders longer than ``limit`` or holds too many; why they went, ``None`` where none did.
+        """Drop the oldest exchanges once the conversation renders longer than ``limit`` or holds too many; why, else ``None``.
 
-        Where the cache cannot shift, they go until the history is well below
-        its room under ``limit`` and its count well below
-        ``max_history_exchanges``.
+        Where the cache cannot shift, they go until it is well below both bounds.
 
         Args:
             tokens_only: Leave ``max_history_exchanges`` out, which may keep
@@ -136,7 +132,7 @@ class Eviction:
         return cause if self.record(n_before, cause) else None
 
     def record(self, n_before: int, cause: EvictionCause) -> int:
-        """Record in the state the history messages that went since it held ``n_before``, and ``cause``, one of :data:`~llama_cpp_conversation.reply.EVICTION_CAUSES`, as why; how many went."""
+        """Record the history messages that went since the state held ``n_before``, and ``cause`` as why; how many went."""
         n_gone = n_before - history_count(self._state.messages)
         if n_gone:
             self._state.changes.n_evicted += n_gone
@@ -191,11 +187,7 @@ class Eviction:
     def drop_bound(self, limit: int, beside_open_turn: bool = False) -> int:
         """How far an eviction brings the conversation down once it is over ``limit``.
 
-        Where the cache cannot shift, or the template writes the rest otherwise
-        once the oldest exchange goes, what a short question alone takes and
-        that fraction of the room after it. With ``beside_open_turn``, where the open
-        turn alone goes past that, what the open turn takes with the system turn
-        and that fraction of the room after them.
+        Where it cannot keep the rest in place, well below, beside an open turn where ``beside_open_turn``; see docs/decisions/0023-without-a-shift-an-eviction-drops-well-below-the-threshold.md.
         """
         if self.keeps_the_rest:
             return limit
@@ -213,8 +205,7 @@ class Eviction:
     def exchanges_after_drop(self) -> int | None:
         """How many exchanges an eviction leaves once there are more than ``max_history_exchanges``.
 
-        Where the cache cannot shift, or the template writes the rest otherwise
-        once the oldest exchange goes, that fraction of them, at least one.
+        Where it cannot keep the rest in place, that fraction of them, at least one.
         """
         limit = self._config.max_history_exchanges
         if limit is None or self.keeps_the_rest:
@@ -223,7 +214,7 @@ class Eviction:
 
     @property
     def keeps_the_rest(self) -> bool:
-        """Whether the cache keeps the exchanges after the oldest when it goes: it shifts them, and the template writes them as before, around the turns that called tools where the conversation holds any."""
+        """Whether the cache keeps the exchanges after the oldest when it goes: it shifts them, and the template writes them alike."""
         checks = self._state.checks
         return self._can_shift and checks.rest_stays and (
             checks.rest_stays_around_calls or not any(

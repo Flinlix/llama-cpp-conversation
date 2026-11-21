@@ -1,9 +1,6 @@
-"""The two forms a conversation's history takes: the Chat Completions messages ``begin`` takes and ``conversation()`` gives, and beside them the turns kept as the tokens they were generated as.
+"""The two forms a conversation's history takes: the Chat Completions messages, and the turns kept as generated.
 
-Plain functions over message lists, testable without a model. Inside, the
-conversation keeps the messages a template is given: a call's arguments as
-the object they encode, a call the model wrote unreadably marked as one, and
-a turn kept as generated on the message it ends with. See docs/decisions/0029-two-history-forms.md.
+See docs/decisions/0029-two-history-forms.md.
 """
 
 from __future__ import annotations
@@ -37,9 +34,7 @@ _FUNCTION_KEYS = {"name", "arguments"}
 def read_messages(messages: list) -> list[dict]:
     """``begin``'s messages, in the Chat Completions form, as the messages a template is given.
 
-    A call whose arguments are no JSON object, or that names no function, is
-    marked as one that could not be read; ``""`` is no arguments. A reply's
-    ``content`` may be ``None`` where it makes calls, and is then empty.
+    A call with no JSON object as arguments, or no function's name, is marked unreadable; ``""`` is no arguments.
 
     Raises:
         TypeError: If a message or a call is no dictionary, or a text, a
@@ -186,12 +181,9 @@ def _result(item: dict, where: str) -> dict:
 
 # ----- the order of calls and results ---------------------------------------------------
 def answer_in_order(messages: list[dict], unreadable_result: str) -> list[dict]:
-    """``messages`` with each result named for the call it answers, checked against the order of the calls.
+    """``messages`` with each result named for the call it answers, the oldest owed one since the newest question.
 
-    A result answers the oldest call still owed one since the newest
-    question. A call that could not be read and is owed one when no result
-    of it follows is answered with ``unreadable_result``, as it was when it
-    was written; one behind a call still owed waits for it.
+    An unreadable call owed one with no result after it is answered with ``unreadable_result``.
 
     Raises:
         ValueError: If two calls carry one id, a result names no call owed
@@ -249,7 +241,7 @@ def _answering_oldest(result: dict, owed: list[dict]) -> dict:
 
 # ----- the Chat Completions form, given ---------------------------------------------------------
 def completions_messages(messages: list[dict], joins_questions: bool) -> list[dict]:
-    """``messages`` in the Chat Completions form ``begin`` takes: every call that could not be read left out with its result, as :func:`without_unreadable` leaves them out."""
+    """``messages`` in the Chat Completions form ``begin`` takes, each unreadable call left out with its result."""
     kept, _gone = without_unreadable(messages, set(), joins_questions)
     return [_as_completions(message) for message in kept]
 
@@ -284,13 +276,9 @@ def arguments_text(arguments: dict) -> str:
 # ----- calls that could not be read ---------------------------------------------------
 def without_unreadable(messages: list[dict], held: set[int],
                        joins_questions: bool) -> tuple[list[dict], set[str]]:
-    """``messages`` without each call that could not be read and its result, except in the messages at ``held``; and the ids of the calls that went.
+    """``messages`` without each unreadable call and its result, except at ``held``; and the ids of the calls that went.
 
-    A reply left with no call goes on in the next reply of its turn, where
-    that one is not held, its text and thought before that reply's; else it
-    stays where it says something, and goes where it says nothing. With
-    ``joins_questions``, two questions this leaves in a row are joined, as a
-    question after an unanswered one is.
+    A reply left with no call joins the next reply of its turn, or goes where it says nothing; see docs/decisions/0029-two-history-forms.md.
     """
     kept, _sources, gone = _without_unreadable(messages, held, joins_questions)
     return kept, gone
@@ -392,14 +380,9 @@ def joined_question(question: dict, later: dict) -> dict:
 
 # ----- turns kept as generated ----------------------------------------------------------
 def generated_turn_records(messages: list[dict], joins_questions: bool) -> list[dict]:
-    """The turns ``messages`` keep as generated, JSON-ready, each with the messages it is put back as: those messages, where each turn's tokens begin among them and how many they stand for, and what they are found again by.
+    """The turns ``messages`` keep as generated, JSON-ready, each with the messages it is put back as and found by.
 
-    They are found by the Chat Completions messages ``messages`` give for
-    them, with the question before them, and with the message after a turn
-    that gives none of its own; they are put back as every message those
-    stand for, so that a question joined across a turn, or a reply that took
-    in its text, comes back as it was. Turns whose messages overlap so are
-    one record; a question may close one record and open the next.
+    A record is found by its Chat Completions messages and the question before them; see docs/decisions/0029-two-history-forms.md.
     """
     kept, sources, _gone = _without_unreadable(messages, set(), joins_questions)
     completions = [_as_completions(message) for message in kept]
@@ -462,7 +445,7 @@ def _exact(message: dict) -> dict:
 
 
 def _portable(message: dict) -> str:
-    """A Chat Completions message as a caller keeps it, as text: no thought, an empty text and a null one alike, arguments as the objects they encode, in their own order."""
+    """A Chat Completions message as a caller keeps it, as text: no thought, an empty and a null text alike."""
     calls = [[c["id"], c["function"]["name"], _arguments(c["function"]["arguments"])]
              for c in message.get("tool_calls") or ()]
     return json.dumps([message["role"], message.get("content") or "", message.get("tool_call_id"),
@@ -482,14 +465,9 @@ def _digest_of(portable: list[str]) -> str:
 
 def with_generated_turns(messages: list[dict], turns: list[dict],
                      joins_questions: bool) -> tuple[list[dict], int]:
-    """``messages``, read from the Chat Completions form, with each record of ``turns`` that they still hold put back as the conversation held it, each turn's tokens on its message; and how many turns were.
+    """``messages`` with each record of ``turns`` they still hold put back as the conversation held it; how many turns were.
 
-    The newest record is placed first, where it stood when it was saved
-    among places that read alike, else at the newest, and each older one
-    before the record placed after it, the question that opens that
-    record's messages shared; its messages take the place of the Chat
-    Completions ones it was found by. A turn found nowhere is written as the
-    template writes it.
+    The newest record is placed first; a turn found nowhere is written as the template writes it.
     """
     portable = [_portable(_as_completions(message)) for message in messages]
     by_width: dict[int, dict[str, list[int]]] = {}

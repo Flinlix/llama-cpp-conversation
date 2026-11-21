@@ -28,11 +28,9 @@ class _RegisteredTool:
 
 
 class ToolRegistry:
-    """The tools this process can run, by the name the model calls them.
+    """The tools this process can run, by the name the model calls them; :meth:`specs` gives their declarations.
 
-    Registering makes a tool runnable at once. :meth:`specs` gives the
-    declarations that ``begin`` tells the model. Nothing here writes to a model, so nothing here learns what
-    the conversation still holds. See docs/guide/tool-calling.md.
+    See docs/guide/tool-calling.md.
     """
 
     def __init__(self) -> None:
@@ -41,13 +39,9 @@ class ToolRegistry:
     def tool(self, function_or_description: Callable | str | None = None, /, *,
              name: str | None = None, description: str | None = None,
              parameters: dict | None = None) -> Callable:
-        """Make a function callable by the model, as a decorator or called on the function.
+        """Make a function callable by the model, as a decorator or called on the function; a name registered again is replaced.
 
-        ``@registry.tool`` describes the function by its docstring and its
-        parameters by their annotations; ``@registry.tool("...")`` and
-        ``description=`` give the description instead. ``registry.tool(function,
-        ...)`` registers a function written elsewhere. A name already
-        registered is replaced, its declaration included.
+        Its docstring and annotations describe it, unless a description is given; see the tool-calling guide.
 
         Args:
             function_or_description: The function to register, or the
@@ -117,12 +111,9 @@ class ToolRegistry:
                 for e in self._entries.values()]
 
     def call(self, call: ToolCall) -> Any:
-        """Run what ``call`` asked for, turning every failure into a result.
+        """Run what ``call`` asked for, turning every failure into a result; nothing raises.
 
-        Nothing raises: a failure belongs back in the conversation. The model's
-        mistake and the tool's own are told apart before the call: arguments
-        that do not fit the signature or its types are the model's, so a
-        ``TypeError`` raised inside a tool is not reported as a bad call.
+        Arguments that do not fit the signature are the model's mistake, told apart before the tool runs.
 
         Returns:
             Whatever the tool returned, where it is text or what JSON can write,

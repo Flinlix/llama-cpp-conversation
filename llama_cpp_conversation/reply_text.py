@@ -13,12 +13,9 @@ from .loop_variant import LoopVariant
 
 
 class ReplyText:
-    """A reply's answer as it streams: its thought and any header for another reader taken out, then its stop strings matched.
+    """A reply's answer as it streams: its thought and any header for another reader taken out, its stop strings matched.
 
-    Once answer text has passed, a thought opens only at the model's own tag,
-    not at its letters. A tag the model writes is never shown, except, before
-    answer text has passed, one that is part of a thought's tags or of the
-    answer's opening, which the filters read.
+    A tag the model writes is never shown; once answer text has passed, a thought opens only at a real tag.
 
     Args:
         reasoning: The model's thought tags; ``None`` for a model that has none.
@@ -115,9 +112,7 @@ class ReplyText:
                       is_tag: Callable[[int], bool]) -> Callable[[int], bool]:
         """Whether a sampled token ends the reply, besides the end-of-generation tokens.
 
-        Where a thought's closing begins with the turn's end, that token is the
-        closing's while ``generated``, every token generated before it, ends
-        inside a thought, whether or not its text was fed yet.
+        Where a thought's closing begins with the turn's end, that token closes the thought while one is open.
         """
         tags = self._reasoning
         if tags is None or not tags.thought_close.strip().startswith(turn_end_text):
@@ -141,15 +136,9 @@ class ReplyText:
 
 
 class _ThoughtFilter:
-    """Passes on a reply's text as it streams, all but its thoughts.
+    """Passes on a reply's text as it streams, all but its thoughts, the tags matched without their whitespace.
 
-    The tags are matched without their surrounding whitespace, and the answer
-    after a thought starts unpadded. Whitespace at the reply's very start is
-    held until what follows says whose it is.
-
-    Once answer text has begun, a thought opens only where a tag of the
-    model's stands in its opening's text, where ``tag_spans`` says where they
-    stand.
+    Once answer text has begun, a thought opens only where ``tag_spans`` puts a real tag.
 
     Args:
         reasoning: The model's thought tags.
@@ -290,12 +279,9 @@ class _ThoughtFilter:
 
 
 class _AnswerOpening:
-    """Removes the header a model writes ahead of its answer, where it writes one.
+    """Removes the header a model writes ahead of its answer, holding the start back until it is known.
 
-    Only the answer's start is read: until the text is known to begin with the
-    header, or not to, it is held back. The answer after a header starts
-    unpadded. Given ``header``, the start and end every reply's header shares,
-    a header naming another reader is held until it ends and never shown.
+    A header naming another reader, by ``header``'s start and end, is never shown.
     """
 
     def __init__(self, opening: str, header: tuple[str, str] | None = None) -> None:
@@ -339,11 +325,9 @@ class _AnswerOpening:
 
 def reply_header(answer_opening: str, reasoning: Reasoning | None,
                  tags: tuple[str, ...] = ()) -> tuple[str, str] | None:
-    """The start and end a reply's header shares, where the answer and a thought each have one.
+    """The start and end a reply's header shares, each a whole run of the model's ``tags``.
 
-    Neither end divides one of the model's ``tags``: an end that would is
-    narrowed to the tags whole. ``None`` where a template routes no reply
-    through a header naming its reader.
+    ``None`` where a template routes no reply through a header naming its reader.
     """
     if reasoning is None or not answer_opening.strip():
         return None
@@ -424,8 +408,7 @@ def partial_match_at(text: str, needle: str) -> int:
 class _AnswerStops:
     """Collects an answer as it streams, ending it at the earliest stop string.
 
-    Text that could still begin a stop string is held back until it is known
-    not to. Without stop strings everything passes at once.
+    Text that could still begin a stop string is held back until it is known not to.
     """
 
     def __init__(self, stops: list[str], after_text: bool = False) -> None:

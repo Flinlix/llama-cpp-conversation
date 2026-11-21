@@ -46,11 +46,9 @@ class Interrupt(Protocol):
     def is_set(self) -> bool: ...
 
 class CacheSync:
-    """The tokens a cache should hold, and that cache brought to hold them.
+    """The tokens a cache should hold, and that cache brought to hold them; every change to :attr:`tokens` goes through here.
 
-    Every change to :attr:`tokens` goes through here. A cache that shifts or
-    cuts its end takes each change at once; one that cannot is brought back to
-    :attr:`tokens` before the next generation or rest. See docs/decisions/0022-eviction-drops-whole-oldest-exchanges.md.
+    See docs/decisions/0022-eviction-drops-whole-oldest-exchanges.md.
     """
 
     def __init__(self, context: CacheContext, micro_batch_tokens: int | None = None,
@@ -127,9 +125,7 @@ class CacheSync:
     def generate(self, max_generated_tokens: int, out: GenerationAccumulator, **options):
         """Stream a generation from the cache's end; what it decodes is appended to :attr:`tokens`.
 
-        A ``cancel`` among ``options`` is watched while what the generation
-        follows is decoded too; set there, it ends the generation at once as
-        ``"interrupted"``, with nothing generated.
+        A ``cancel`` set while the prompt is still decoded ends it at once as ``"interrupted"``, nothing generated.
         """
         self.cancel = options.get("cancel")
         try:
@@ -165,7 +161,10 @@ class CacheSync:
                 self._tokens += out.token_ids
 
     def _switch_for(self, target: list[int], same: int) -> int:
-        """Keep the cache where ``target`` leaves most of it, and hold a kept one instead where that shares more of ``target``; how much of ``target`` the cache then holds. See docs/decisions/0031-conversations-switched-away-from-are-kept.md."""
+        """Keep the cache, or switch to a kept one that shares more of ``target``; how much of ``target`` it then holds.
+
+        See docs/decisions/0031-conversations-switched-away-from-are-kept.md.
+        """
         store = self._kept
         assert store is not None, "a switch is asked only where caches are kept"
         kept = store.longest_start(target)
@@ -197,7 +196,10 @@ class CacheSync:
         return common_prefix_length(tokens, target)
 
     def note_template_written(self, start: int, end: int) -> None:
-        """Note that the cache holds from ``start`` to ``end`` only what the template wrote, no message's text, such as the prompt a reply is generated after: the next :meth:`hold` shifts out a stretch within it that its target leaves out, where the cache can shift. It moves with every removal before it and is forgotten with any other change there."""
+        """Note that the cache holds from ``start`` to ``end`` only template text, such as a reply's prompt.
+
+        The next :meth:`hold` may shift out a stretch of it that its target leaves out, where the cache can shift.
+        """
         self._template_written = (start, end)
 
     @property
@@ -254,7 +256,7 @@ class CacheSync:
     def hold(self, target: list[int], *, want_logits: bool = False,
              find_dropped_stretch: bool = False, rest_at_cut: bool = False,
              begins: bool = False) -> int:
-        """Make the cache hold ``target``: a stretch it no longer holds removed, everything from the first difference decoded; how many of its tokens it held already, before any stretch was removed.
+        """Make the cache hold ``target``, decoding from the first difference; how many of its tokens it held already.
 
         Args:
             want_logits: A generation follows the decode at once.
@@ -337,8 +339,7 @@ class CacheSync:
     def repair(self) -> bool:
         """Bring the cache to its tokens where a change was left for later or failed; whether it was needed.
 
-        Where bringing it up fails, it is emptied and its tokens decoded
-        whole once more; only a failure of that is raised.
+        Where that fails, it is emptied and decoded whole once more; only a failure of that is raised.
         """
         if self.is_current:
             return False
@@ -576,10 +577,9 @@ class _KeptCaches:
 
 
 def _left_out_stretch_end(held: list[int], target: list[int], start: int, last: int) -> int | None:
-    """Where ``held`` goes on as ``target`` does from ``start``, a stretch ending at ``last`` at the latest left out; ``None`` where it does nowhere.
+    """Where ``held`` goes on as ``target`` does from ``start`` once a stretch ending by ``last`` is left out; else ``None``.
 
-    ``held`` must go on as ``target`` for as long as either goes on, up to
-    :data:`_LEFT_OUT_MATCH_TOKENS`.
+    The two must agree for :data:`_LEFT_OUT_MATCH_TOKENS` tokens, or to the end of either.
     """
     wanted = target[start:start + _LEFT_OUT_MATCH_TOKENS]
     for end in range(start + 1, min(last, len(held)) + 1):

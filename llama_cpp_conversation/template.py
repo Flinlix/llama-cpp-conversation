@@ -57,11 +57,9 @@ def json_arguments(name_close: str, rest: str) -> str:
 
 @dataclass(frozen=True)
 class CallBody:
-    """How a model spells a function name and its arguments between the tags.
+    """How a model spells a function name and its arguments between the tags, from its template or add-on file.
 
-    Recovered from the model's own template, or built from its add-on file's
-    call. See docs/decisions/0037-a-calls-format-is-recovered-from-the-templates-renders.md for the
-    shapes these fields take on real models.
+    See docs/decisions/0037-a-calls-format-is-recovered-from-the-templates-renders.md.
 
     Attributes:
         name_close: After the function name, or after its call's id where
@@ -135,10 +133,7 @@ class CallBody:
 
 @dataclass(frozen=True)
 class ToolCallFragments:
-    """How a model writes a tool call: the tags around it.
-
-    The two tags are taken verbatim from a render, so either may carry fixed
-    text past the tag itself.
+    """How a model writes a tool call: the tags around it, taken verbatim from a render with any fixed text beside them.
 
     Attributes:
         call_open: What stands between the assistant turn's opening tag and the
@@ -153,10 +148,7 @@ class ToolCallFragments:
 
 @dataclass(frozen=True)
 class TemplateFragments:
-    """The template tags a turn is wrapped in.
-
-    A turn renders as ``prefix + content + suffix``. What a tool call is
-    wrapped in is :class:`ToolCallFragments`.
+    """The template tags a turn is wrapped in: it renders as ``prefix + content + suffix``.
 
     Attributes:
         user_prefix, user_suffix: Wrap a user turn.
@@ -196,8 +188,7 @@ class TemplateFragments:
 class Reasoning:
     """How a model's template marks a thought, and what reasoning opens a reply with.
 
-    A template without a switch writes the same conversation either way, so
-    its forms with reasoning are its forms without.
+    A template without a switch writes the same either way, so its forms with reasoning are its forms without.
 
     Attributes:
         thought_open, thought_close: Around the thought a reply opens with.
@@ -236,11 +227,7 @@ def _ends_a_tag(text: str, at: int, tags: tuple[str, ...]) -> bool:
 
 
 def shared_tags_length(text: str, other: str, tags: tuple[str, ...]) -> int:
-    """How long a beginning the two share, ending where one of the model's ``tags`` or a word ends.
-
-    A word ends at whitespace, so the shared part never stops inside a tag or
-    a word the two spell differently.
-    """
+    """How long a beginning the two share, ending where one of the model's ``tags`` or a word ends, never inside one."""
     shared = common_prefix_length(text, other)
     shared_variant = LoopVariant("backing to a word's end")
     while shared and not (text[shared - 1].isspace() or _ends_a_tag(text, shared, tags)):

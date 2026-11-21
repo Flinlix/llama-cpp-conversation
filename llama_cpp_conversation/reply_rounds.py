@@ -47,7 +47,10 @@ def _unreadable(calls: list[ToolCall]) -> bool:
 
 
 def _closed_for_room(generation: Reply, unanswered: list[str], ran: set[str]) -> Reply:
-    """``generation`` once its turn closed on what the model wrote, for want of room to answer the calls ``unanswered`` names: each reported ``"result_dropped"`` where its tool ran, ``"unfinished"`` where none did."""
+    """``generation`` once its turn closed for want of room to answer the calls ``unanswered`` names.
+
+    Each is reported ``"result_dropped"`` where its tool ran, ``"unfinished"`` where none did.
+    """
     return replace(generation, stop_reason="token_limit", tool_calls=[
         replace(call, status="result_dropped" if call.id in ran else "unfinished")
         if call.id in unanswered else call for call in generation.tool_calls])
@@ -90,8 +93,7 @@ class _Raised:
 def explain_failure(result, may_call_again: bool):
     """Say that the call failed and whether to call again, leaving a real result alone.
 
-    A dict carrying ``error`` is a failure, whether the registry built it or a
-    tool returned one itself; its ``message`` becomes the reason.
+    A dict carrying ``error`` is a failure; its ``message`` becomes the reason.
     """
     if not isinstance(result, dict) or "error" not in result:
         return result
@@ -102,7 +104,7 @@ def explain_failure(result, may_call_again: bool):
 
 
 def parting(before: str, text: str) -> str:
-    """What a stream shows between ``before``, the text shown before a generation in its turn, and ``text``, that generation's: a blank line where they would join without whitespace."""
+    """What a stream shows between ``before`` and ``text``, a generation's: a blank line where they would join without space."""
     return "\n\n" if before and text and not before[-1].isspace() and not text[0].isspace() else ""
 
 
@@ -125,11 +127,9 @@ class ReplyRounds:
         self, text: str | None, *, policy: ToolRegistry | ToolCallPolicy, budget: CallBudget,
         on_started: Callable[[], None], max_reply_tokens: int | None,
         **kwargs) -> Generator[str | ToolCall, None, Reply]:
-        """Generate, settle whatever the model calls, and go on until it answers.
+        """Generate, settle whatever the model calls, and go on until it answers; the lock must be held throughout.
 
-        Each call that runs is handed over in the stream before it runs. The
-        lock must be held for the whole exchange, tools running included; a
-        tool that calls back into the wrapper is refused.
+        Each call that runs is handed over in the stream before it runs.
 
         Args:
             policy: The registry to run calls against, or ``"refuse"``, which
@@ -239,12 +239,9 @@ class ReplyRounds:
 
     def until_called(self, text: str | None, *, max_reply_tokens: int | None,
                                **kwargs) -> Generator[str, None, Reply]:
-        """Generate until the model makes a call that can be handed over, or answers.
+        """Generate until the model makes a call that can be handed over, or answers; the lock must be held.
 
-        A call that cannot be read is answered with a failure and the reply
-        goes on, every generation of it within one reply cap; once
-        ``MAX_UNREADABLE_CALLS_IN_A_ROW`` such calls came in a row, it goes on
-        reading no call. The lock must be held.
+        An unreadable call is answered with a failure; after ``MAX_UNREADABLE_CALLS_IN_A_ROW`` no call is read.
         """
         reply_cap = self.reply_cap(max_reply_tokens)
         open_turn_text = self.open_turn_text()
@@ -272,9 +269,7 @@ class ReplyRounds:
     def read_generation(self, deltas: Generator[str, None, Reply], after: str):
         """Yield one generation's text, and return the :class:`Reply` describing it.
 
-        Where ``after``, the text shown before it, and this text would join
-        without whitespace, a blank line goes between them, and the Reply's
-        text starts with it.
+        A blank line goes before it where it would join ``after``, the text shown before it, without space.
         """
         separator = None
         try:
@@ -305,15 +300,9 @@ class ReplyRounds:
 
     def _settle_calls(self, asked: list[ToolCall], registry: ToolRegistry | None,
                       budget: CallBudget, cancel):
-        """Decide what every call of one round gets back, running what may run, and hand over each call that runs before it runs.
+        """Decide what every call of one round gets back, in order, running what may run, each handed over before it runs.
 
-        The calls are settled in the order asked, before any result is written.
-        A call handed over counts against ``budget`` from then on. Where the
-        stream is closed at a call handed over, or anything is raised while it
-        runs, a ``KeyboardInterrupt`` included, the results of the calls that ran
-        before it are written, and it and the rest of the round stay owed.
-        Where ``cancel`` is set before a call would run, the calls from it on
-        are left out.
+        Where the round stops at a call, the results before it are written, and it and the rest stay owed.
 
         Returns:
             The ``(call, result)`` pairs, and the ids of the calls whose tool ran.
@@ -350,10 +339,9 @@ class ReplyRounds:
         return settled, ran
 
     def _run_tool(self, registry: ToolRegistry, call: ToolCall):
-        """What ``registry`` returns for ``call``, run on a thread of its own; a failure where it does not return within ``tool_timeout_s``.
+        """What ``registry`` returns for ``call``, run on a thread of its own; a failure past ``tool_timeout_s``.
 
-        A tool past its time keeps running, and what it returns is dropped.
-        Without a time limit, it runs on the reply's own thread.
+        A tool past its time keeps running, its return dropped; without a limit it runs on the reply's thread.
         """
         if self._config.tool_timeout_s is None:
             return registry.call(call)
@@ -380,10 +368,9 @@ class ReplyRounds:
 
     def _write_results(self, settled: Sequence[tuple[ToolCall, object]],
                        may_call_again: bool) -> tuple[int, list[str]]:
-        """Write the result of each settled call, in order, a failure saying whether another call is worth making, until the turn closes for want of room; how many history messages were evicted for them, and the ids of the calls left unanswered.
+        """Write each settled call's result, in order, until the turn closes for want of room.
 
-        Where anything but a want of room stops the writing, the answers not
-        yet written wait for the next reply or result, which writes them first.
+        Returns how many history messages went for them, and the ids of the calls left unanswered.
         """
         answers = [(call, explain_failure(result, may_call_again)) for call, result in settled]
         unanswered: list[str] = []
@@ -405,7 +392,7 @@ class ReplyRounds:
 
     def _write_or_close(self, settled: Sequence[tuple[ToolCall, object]],
                         may_call_again: bool) -> tuple[int, list[str]]:
-        """Write the results of ``settled``, as :meth:`_write_results` does, the turn closed on what the model wrote where no room is left for one; how many history messages went, and the ids of the calls left unanswered."""
+        """Write the results of ``settled``, the turn closed where no room is left for one; as :meth:`_write_results` returns."""
         try:
             return self._write_results(settled, may_call_again)
         except ContextOverflowError:

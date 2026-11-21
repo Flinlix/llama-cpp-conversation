@@ -1,16 +1,6 @@
-"""Recover a model's own chat template by rendering probes and comparing them.
+"""Recover a model's own chat template by rendering probes and comparing them: its tags and its reasoning marks.
 
-Probes carry sentinel content, and splitting a render on its sentinels recovers
-the template that produced it. Two things come out:
-
-* :func:`extract_fragments`: the tags wrapped around each role's content.
-* :func:`extract_reasoning`: how a thought is marked and reasoning turned on.
-
-How a call is written is recovered by :mod:`llama_cpp_conversation.call_format`. No model's
-format is written down here, and where a comparison proves nothing the answer
-is ``None`` rather than a guess.
-
-A pure function of the render callable, so it is testable without a model.
+Where a comparison proves nothing the answer is ``None``, not a guess.
 """
 
 from __future__ import annotations
@@ -49,13 +39,9 @@ Render = Callable[..., "str | None"]
 
 
 def reasoning_switch(render_variables: Callable[..., str]) -> Callable[[bool | None], dict]:
-    """The template variables that turn reasoning on or off, as a render reads them; an effort level turns it on.
+    """The template variables that turn reasoning on or off: ``enable_thinking``, else ``reasoning_effort``.
 
-    ``enable_thinking``, the variable chat templates share for it, where it
-    changes the render; else ``reasoning_effort``, where ``"none"`` changes
-    what follows the user turn compared with the template's own default: then
-    ``"none"`` is off and the default is on. A template that turns reasoning
-    on otherwise names it in its add-on file's ``reasoning_on``.
+    Other switches are named in the add-on file's ``reasoning_on``; see docs/decisions/0009-reasoning-is-switched-as-the-template-switches-it.md.
 
     Args:
         render_variables: Renders ``messages`` with ``generation_prompt`` and the
@@ -91,12 +77,9 @@ _NO_LEVELS = ("none",)
 
 def reasoning_levels(render_levelled: Callable[[list, str | bool], "str | None"],
                      constants: Iterable[str], listed: Sequence[str]) -> tuple[str, ...]:
-    """The effort levels a conversation can reason at, each one the template writes otherwise than an effort it does not know, with the generation prompt reasoning on writes.
+    """The effort levels a conversation can reason at: those of ``constants`` the template writes apart from an unknown one.
 
-    A template that writes the effort it is given as it is tells no level
-    apart: ``listed``, what the model's add-on file names, are its levels.
-    Otherwise they are those of ``constants``, the texts the template holds,
-    that it tells apart so.
+    Where it writes any effort as given, ``listed``, from the add-on file, are its levels.
 
     Args:
         render_levelled: Renders messages with the generation prompt, with
@@ -134,13 +117,9 @@ def refusing(render: Render) -> Render:
 
 
 def as_probes_read(render: Render, tags: tuple[str, ...] = ()) -> Render:
-    """``render`` as probes read it.
+    """``render`` as probes read it: ``None`` where it raises, and without what follows the last message.
 
-    It answers ``None`` where it raises, a template refusing a shape. A render
-    without a generation prompt comes back without what the template writes
-    once after a conversation's last message, which belongs to no turn, read
-    up to where one of the model's ``tags`` or a word ends. A render this
-    made already comes back as it is.
+    That trailing text belongs to no turn; it is read up to where one of the model's ``tags`` or a word ends.
     """
     if getattr(render, "reads_as_probes", False):
         return render
@@ -281,9 +260,7 @@ def _ending_tag(text: str, tags: tuple[str, ...]) -> str:
 def _past_thought(render: Render, found_in: str | None) -> dict:
     """Whether a past reply keeps its thought once a later turn follows, and the form it is read in.
 
-    Tried in ``found_in``, the form the thought's tags were read from, first,
-    then in each other of :data:`~llama_cpp_conversation.messages.THOUGHT_FORMS`; not at
-    all where the tags were read from no reply.
+    Tried in ``found_in`` first, then in each other of :data:`~llama_cpp_conversation.messages.THOUGHT_FORMS`.
 
     Returns:
         The fields of :class:`~llama_cpp_conversation.template.Reasoning` that say so.

@@ -1,4 +1,4 @@
-"""What the cache should hold for a list of messages: their render, or the cache up to an anchor and the render of a window after it, where such a window stands for the whole."""
+"""What the cache should hold for a list of messages: their render, or an anchor and the render of a window after it."""
 
 from __future__ import annotations
 
@@ -15,9 +15,7 @@ from .split_render import SplitRender
 class _View:
     """Messages as the cache holds them: rendered whole, or as a window of the newest after the cache's anchor.
 
-    The cache holds ``base`` and then the tokens of ``split`` from ``start``
-    on; ``messages`` is what was rendered, and the conversation's message
-    ``i`` is its ``i - offset``-th, the system message aside.
+    The cache holds ``base``, then ``split`` from ``start``; message ``i`` is the ``i - offset``-th rendered.
     """
 
     split: SplitRender
@@ -52,13 +50,9 @@ class CacheTargets:
         self._memory = memory
 
     def window_of(self, messages: list[dict]) -> tuple[int, Anchor] | None:
-        """Where a window of ``messages`` begins that stands for their render after one of the cache's anchors, the newest that still stands, and that anchor; ``None`` where no window does.
+        """Where a window of ``messages`` begins that stands for their render after one of the cache's anchors, and that anchor.
 
-        The window opens with the exchange the anchor's message ends, and
-        holds at most three more; that message is a reply that closes its
-        turn and a question follows it, as in the probes that showed windows
-        to stand for the whole render, so that nothing a turn left open
-        carries past it and nothing after it writes its closing otherwise.
+        ``None`` where none does; see docs/decisions/0026-renders-are-windows-of-the-newest-exchanges.md.
         """
         if not self._state.checks.windows:
             return None
@@ -97,7 +91,10 @@ class CacheTargets:
         return start
 
     def view(self, messages: list[dict], generation_prompt: bool) -> _View | None:
-        """``messages`` rendered as the cache holds them: a window of the newest of them after the newest of the cache's anchors that still opens with the tag the cache holds there, where one stands for the whole, else all of them; ``None`` where the template refuses them."""
+        """``messages`` rendered as the cache holds them: a window after its newest anchor that still stands, else all of them.
+
+        ``None`` where the template refuses them.
+        """
         for anchor in reversed(self._state.anchors if self._state.checks.windows else ()):
             start = self.window_after(messages, anchor)
             if start is None:
@@ -153,7 +150,7 @@ class CacheTargets:
         return self.view_target(view)
 
     def length(self, messages: list[dict], generation_prompt: bool) -> int:
-        """How many tokens the cache holds for ``messages``, as :meth:`ConversationRendering.length` counts them, from a window of the newest of them where one stands for the whole."""
+        """How many tokens the cache holds for ``messages``, counted from a window of the newest where one stands for the whole."""
         if self.window_of(messages) is not None:
             view = self.view(messages, generation_prompt)
             if view is not None and view.base:
@@ -161,6 +158,9 @@ class CacheTargets:
         return self._rendering.length(messages, generation_prompt)
 
     def newest_part(self, messages: list[dict]) -> list[dict]:
-        """The system message and the window of the newest of ``messages`` that stands for their render, or all of them where none does; what a refusal of the newest is read from."""
+        """The system message and the window of the newest of ``messages``, or all of them where none stands for the whole.
+
+        A refusal of the newest is read from it.
+        """
         found = self.window_of(messages)
         return messages if found is None else system_part(messages) + messages[found[0]:]

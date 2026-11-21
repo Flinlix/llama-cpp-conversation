@@ -1,9 +1,6 @@
-"""Small chat templates in an invented format, each a fixture of the form :class:`~llama_cpp_conversation.testing.fake_context.FakeContext` takes.
+"""Small chat templates in an invented format, each a fixture of the form ``FakeContext`` takes.
 
-Every tag is invented, not any real model's, so nothing can pass by matching a
-format hard-coded somewhere. Each template is the one Jinja text below, with
-the switches at its top set as that template needs them, and is rendered by
-the renderer a model is loaded with.
+Every tag is invented, so that nothing passes by matching a real model's format.
 """
 
 from llama_cpp_conversation.template import CallBody

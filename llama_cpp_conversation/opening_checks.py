@@ -1,4 +1,7 @@
-"""What a template's renders allow for one opening of a conversation (its system turn, declarations and reasoning), worked out once and kept for the openings worked out last, and the room a short question needs on the date the template writes longest."""
+"""What a template's renders allow for one opening of a conversation, worked out once and kept for the last openings.
+
+It also gives the room a short question needs on the date the template writes longest.
+"""
 
 from __future__ import annotations
 

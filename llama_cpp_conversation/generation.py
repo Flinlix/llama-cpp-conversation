@@ -1,8 +1,4 @@
-"""A generation on a cache context, token by token: its text streamed, a call told apart, and where it stops.
-
-The loop draws, decodes and reads each token through the steps every cache
-context answers, so it runs the same over any of them.
-"""
+"""A generation on a cache context, token by token: its text streamed, a call told apart, and where it stops."""
 
 from __future__ import annotations
 
@@ -24,10 +20,7 @@ from .loop_variant import LoopVariant
 class GenerationAccumulator:
     """What one generation has produced so far, filled as tokens stream in.
 
-    Every token is decoded into the cache before the stream yields the next
-    text or ends; where the context's decode blocks, its own text is yielded
-    first. A caller that abandons the stream still reads exactly what reached
-    the cache.
+    A caller that abandons the stream still reads exactly what reached the cache.
 
     Attributes:
         token_ids: Every token the generation took, each in the cache by
@@ -66,10 +59,7 @@ class GenerationAccumulator:
 
 
 class _TextBuffer:
-    """Decoded text with a cursor tracking how much has been emitted.
-
-    Positions count from the text's start, but only the text not yet emitted
-    is kept, so no step costs more as the text grows.
+    """Decoded text with a cursor tracking how much has been emitted; only the text not yet emitted is kept.
     """
 
     def __init__(self) -> None:
@@ -140,6 +130,8 @@ class AnswerGuard:
             around them left out; empty where the model marks none.
         thought_closing: The tokens that close a thought as the template
             writes it.
+        thought_opening: The tokens that open one, withheld where the
+            generation's room holds no opening, closing and answer token.
         answer_room_tokens: The tokens kept for the answer: a thought that
             reaches the rest of the generation's room, at most half of it,
             beside its closing, is closed with ``thought_closing``; ``None``
@@ -185,11 +177,9 @@ def generate(
     guard: AnswerGuard = AnswerGuard(),  # noqa: B008 (frozen, so one instance serves)
     answer_so_far: Callable[[], str] | None = None,
 ) -> Generator[str, None, None]:
-    """Stream a reply, yielding text deltas as tokens are sampled.
+    """Stream a reply, yielding text deltas as tokens are sampled; the prompt must be prefilled with ``want_logits=True``.
 
-    The caller must have prefilled the generation prompt with
-    ``want_logits=True``. The trailing characters are held back while they
-    could still begin a call's opening or the text that ends a reply.
+    Trailing characters are held back while they could still begin a call's opening or the reply's end.
 
     Args:
         start_pos: Cache position of the first generated token.

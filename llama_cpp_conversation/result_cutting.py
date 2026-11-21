@@ -1,8 +1,4 @@
-"""Writing a tool result within the room a reply leaves: whole where it fits, else it or an earlier result of the same round cut, the cut told to the model in a note.
-
-:class:`ResultCutting` holds no state of its own: it changes the
-conversation's state, and records there each result it cut.
-"""
+"""Writing a tool result within the room a reply leaves: whole where it fits, else cut, with a note telling the model."""
 
 from __future__ import annotations
 
@@ -28,7 +24,7 @@ _A_CUT_NOTE = re.compile(r"\n\(cut: (\d+) of (\d+) characters kept\)\Z")
 
 
 def cut_result(text: str, kept: int) -> str:
-    """``text`` cut to its first ``kept`` characters, :data:`RESULT_CUT_NOTE` after them; a text a cut left is cut from what it kept, the note counting the whole it was cut from."""
+    """``text`` cut to its first ``kept`` characters, :data:`RESULT_CUT_NOTE` after them, the note counting the whole."""
     note = _A_CUT_NOTE.search(text)
     if note is not None and int(note.group(1)) == note.start():
         text, total = text[:note.start()], int(note.group(2))
@@ -41,8 +37,7 @@ def cut_result(text: str, kept: int) -> str:
 def _most_kept(fits: Callable[[int], bool], total: int, guess: int | None = None) -> int:
     """The most characters of ``total`` that a result keeps while ``fits`` holds, ``fits(0)`` holding.
 
-    Searched outward from ``guess`` first, by steps that double, then
-    halved between the last two tried, so that a close guess needs few tries.
+    Searched outward from ``guess`` by doubling steps, then by halving, so that a close guess needs few tries.
     """
     low, high = 0, total
     if guess is not None and 0 < guess < total:
@@ -72,7 +67,7 @@ def _most_kept(fits: Callable[[int], bool], total: int, guess: int | None = None
 
 
 class ResultCutting:
-    """Writes results into the conversation state it was made with, measured with ``measure``, which counts the tokens of messages as :meth:`~llama_cpp_conversation.rendering.ConversationRendering.length` does."""
+    """Writes results into the conversation state it was made with, measured with ``measure``."""
 
     def __init__(self, measure: Callable[[list[dict], bool], int], state: ConversationState,
                  text_within: Callable[[str, int], int]) -> None:
@@ -82,14 +77,9 @@ class ResultCutting:
 
     def write(self, message: dict, owed_after: list[tuple[ToolCall, str]], room: int,
               make_room: Callable[[], bool]) -> bool:
-        """Add ``message``, a result, so that the conversation fits in ``room`` with the generation prompt; whether ``make_room`` dropped exchanges for it.
+        """Add ``message``, a result, so that the conversation fits in ``room``; whether ``make_room`` dropped exchanges for it.
 
-        It is written whole where each result still owed after it, the calls
-        and ids ``owed_after``, still fits empty. Otherwise ``make_room`` drops
-        the oldest exchanges first; where that is not enough, the room keeps
-        space for each later result as the note with nothing kept, unless not
-        even this one would fit then, and an earlier result of the round is
-        cut where this one cut to nothing does not fit, before this one is cut.
+        The order of what goes and what is cut is in the tool-calling guide.
 
         Raises:
             ContextOverflowError: If not even the result cut to nothing fits.
@@ -125,10 +115,9 @@ class ResultCutting:
         return dropped
 
     def cut_to_fit(self, room: int, held: set[int]) -> None:
-        """Cut the results of the newest exchange, the newest first, until the conversation fits in ``room`` with the generation prompt, as a result written in a running conversation is cut; none of those at ``held``, which a generated turn's tokens stand for.
+        """Cut the results of the newest exchange, the newest first, until the conversation fits in ``room``.
 
-        It is measured with the generation prompt, as a reply follows only
-        where the conversation ends on a question or a result.
+        None of those at ``held`` is cut, which a generated turn's tokens stand for.
         """
         messages = self._state.messages
         asked = max((i for i, m in enumerate(messages) if m["role"] == "user"), default=0)
@@ -152,7 +141,7 @@ class ResultCutting:
             return
 
     def _held_for(self, later: ToolCall, later_id: str, text: str) -> dict:
-        """The result room is kept for, for a call owed after the one written: ``text``, or for a call that could not be read the failure it is answered with, which is not cut."""
+        """The result room is kept for, for a call owed after the one written: ``text``, or an unreadable call's failure."""
         if later.status == "unreadable" and self._state.unreadable_result is not None:
             return result_message(UNKNOWN_FUNCTION, later_id,
                                   result_text(self._state.unreadable_result))

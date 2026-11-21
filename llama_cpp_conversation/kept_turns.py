@@ -1,4 +1,4 @@
-"""The turns kept as the tokens they were generated as: which ones a begin may keep, where they stand, those the template no longer places given up, and how much of one a shortened reply keeps."""
+"""The turns kept as the tokens they were generated as: which a begin keeps, where they stand, and what a truncated reply keeps."""
 
 from __future__ import annotations
 
@@ -14,10 +14,9 @@ from .cache_targets import CacheTargets
 
 
 def _text_starts_at(pieces: list[bytes], tags: list[bool], said: bytes) -> int | None:
-    """Where in the joined ``pieces`` the text ``said`` begins that they end on, the pieces marked as ``tags`` counting as no text; ``None`` where they do not end on it.
+    """Where in the joined ``pieces`` the text ``said`` they end on begins, ``tags`` counting as no text; else ``None``.
 
-    The place may fall inside a piece, where one token holds the end of what
-    comes before the text and its first letters.
+    It may fall inside a piece, where one token holds both what comes before and the text's first letters.
     """
     text, at = b"", sum(map(len, pieces))
     for piece, tag in zip(reversed(pieces), reversed(tags)):
@@ -99,10 +98,9 @@ class KeptTurns:
         self.drop_unplaceable()
 
     def drop_unplaceable(self) -> bool:
-        """Hold each generated turn the template writes where it cannot be placed as the template writes it instead; whether any was.
+        """Hold each generated turn that cannot be placed as the template writes it instead; whether any was.
 
-        Where a window of the newest exchanges stands for the render, only
-        the turns it holds are placed: those before it stay as they were.
+        Where a window of the newest exchanges stands for the render, only the turns it holds are placed.
         """
         messages = self._state.messages
         if not generated_turns_in(messages):
@@ -123,12 +121,9 @@ class KeptTurns:
         return bool(unplaced)
 
     def generated_up_to(self, turn: GeneratedTurn, text: str, keep_text: str) -> GeneratedTurn | None:
-        """``turn``, ending on a reply's ``text``, as its tokens hold the reply cut to ``keep_text``: its generated tokens up to the last whole one before the cut, the rest of ``keep_text`` tokenized; ``None`` where its tokens do not end on ``text``.
+        """``turn``, ending on a reply's ``text``, cut to ``keep_text``: its tokens to the cut, the rest tokenized; else ``None``.
 
-        A tag the model wrote inside the text is no text, as the reply's text
-        drops it: it is kept where it stands before the cut and goes with the
-        rest. Where the text spells a tag itself, the tokens are read as
-        generated.
+        A tag the model wrote inside the text counts as no text, as the reply's text drops it.
         """
         spelled = [self._context.token_bytes(token) for token in turn.tokens]
         said = text.encode()
@@ -152,7 +147,7 @@ class KeptTurns:
         return GeneratedTurn(tokens, turn.span, turn.on_call)
 
     def _starts_in_a_thought(self, tokens: tuple[int, ...], pieces: list[bytes], length: int) -> bool:
-        """Whether the last ``length`` bytes of the joined ``pieces``, one per token of ``tokens``, begin inside a thought, which the reply's text hides, as the tokens before them read."""
+        """Whether the last ``length`` bytes of the joined ``pieces``, one per token of ``tokens``, begin inside a thought."""
         marks = self._template().properties.reasoning
         if marks is None or not marks.thought_open.strip():
             return False
@@ -165,11 +160,9 @@ class KeptTurns:
         return text.rfind(marks.thought_open.strip()) > text.rfind(marks.thought_close.strip())
 
     def generated_to_its_call(self, turn: GeneratedTurn, text: str, span: int) -> GeneratedTurn | None:
-        """``turn``, ending the newest message, a reply of ``text``, as the turn of its first ``span`` messages, ending on its newest call: its generated tokens up to that call's closing; ``None`` where they cannot be told.
+        """``turn``, a reply of ``text``, as the turn of its first ``span`` messages: its tokens up to its last call's closing.
 
-        The closing is the one right before the template's text from it to the end of
-        the newest result's content, the results that follow the call, since a
-        result's own closing may read the same.
+        ``None`` where that closing cannot be told from a result's own.
         """
         messages = self._state.messages
         calling = len(messages) - turn.span + span - 1

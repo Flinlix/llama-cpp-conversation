@@ -1,4 +1,4 @@
-"""The state a conversation keeps between actions, and the copies made of it: what an action puts back, what readers without the lock see, and what an action changed unasked."""
+"""The state a conversation keeps between actions, and the copies made of it for putting back and for readers."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from .tools import ToolCall, ToolSpec
 
 
 def reasoning_switch(reasoning: bool, level: str | None) -> bool | str:
-    """The switch a conversation's renders take for ``reasoning`` and ``reasoning_level`` as ``begin`` takes them: off, on as the template's own, or on at the effort level named."""
+    """The switch a conversation's renders take for ``reasoning`` and ``reasoning_level``: off, on, or on at a level."""
     return level if reasoning and level is not None else reasoning
 
 
@@ -33,13 +33,9 @@ class MadeFor:
 
 @dataclass(frozen=True, eq=False)
 class Anchor:
-    """Where the cache holds the tag that opens the exchange after ``message``, the ``index``-th message, which windows of the newest exchanges are placed after.
+    """Where the cache holds the tag that opens the exchange after the ``index``-th message, for windows placed after it.
 
-    It stands while that message is still the ``index``-th and the generated turns
-    up to it are still ``kept``, by identity. ``written_under_a_repeat`` holds
-    where a question after it repeated the text of a message before it when the
-    cache up to it was written, so that a template that writes such a message
-    otherwise may have written the cache there for a conversation no longer held.
+    It stands while that message is still there and the turns up to it still ``kept``; see docs/decisions/0026-renders-are-windows-of-the-newest-exchanges.md.
     """
 
     message: dict

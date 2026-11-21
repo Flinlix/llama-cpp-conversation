@@ -26,11 +26,9 @@ TOOL_CALL_POLICIES: tuple[str, ...] = get_args(ToolCallPolicy)
 
 @dataclass
 class Reply:
-    """What one request produced.
+    """What one request produced, over all its generations.
 
-    One generation, or, where the request took several, all of them: the counts
-    are then sums, and ``n_prompt_tokens`` and ``stop_reason`` are the last
-    one's.
+    The counts are sums; ``n_prompt_tokens`` and ``stop_reason`` are the last generation's.
 
     Attributes:
         text: The assistant's reply, trimmed at any stop string, its thought
@@ -151,16 +149,9 @@ _Delta = TypeVar("_Delta")
 
 
 class ReplyStream(Generic[_Delta]):
-    """One request's deltas, and the :class:`Reply` they add up to.
+    """One request's deltas, and the :class:`Reply` they add up to; a context manager.
 
-    Iterate it for what the model produces, then read :attr:`reply` for the
-    summary. Closing it early records what was generated, and :attr:`reply`
-    then holds the summary of the generation it was closed in, what that
-    generation evicted and cut included; a call already handed over stays
-    owed, its turn open for the result. Closing is what an abandoned stream
-    needs, so it is also a context manager. Like the wrapper's actions, it
-    raises only the library's own errors. One thread steps it at a time; a
-    stream another thread steps waits for that step.
+    Closing it early, and stepping it from several threads, is in the streams-and-threads guide.
 
     Attributes:
         reply: The summary, ``None`` until the stream has ended or was
@@ -231,10 +222,7 @@ class ReplyStream(Generic[_Delta]):
         return 0.0 if read_at is None else time.monotonic() - read_at
 
     def _end_if_unread(self, unread_s: float) -> bool:
-        """Close the stream, as :meth:`close` does, where its reader has taken no step for ``unread_s`` seconds; whether it did.
-
-        Its reader then finds it ended, :attr:`reply` as closing it leaves
-        it.
+        """Close the stream, as :meth:`close` does, where its reader took no step for ``unread_s`` seconds; whether it did.
         """
         if not self._stepping.acquire(blocking=False):
             return False                # a step runs: it is being read

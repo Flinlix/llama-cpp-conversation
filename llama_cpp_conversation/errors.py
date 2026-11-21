@@ -1,10 +1,6 @@
 """What an action refuses, by what the caller does about it, and the engine's failures.
 
-Every refusal is a ``ValueError`` and is raised before the action changes
-anything; ``field`` names the argument or setting it is about, where it is
-about one. A wrong type is an :class:`ArgumentTypeError`, a ``TypeError``
-that names the argument. Every public action of a loaded wrapper raises only
-these; anything else raised inside one is raised as :class:`InternalError`.
+A refusal is a ``ValueError`` raised before the action changes anything; the actions guide lists them all.
 """
 
 from __future__ import annotations
@@ -28,7 +24,7 @@ class RefusalError(ValueError):
 
 
 class InvalidSettingError(RefusalError):
-    """A setting of :class:`~llama_cpp_conversation.config.Config` or :class:`~llama_cpp_conversation.config.Sampling`, or a request's own, holds a value that is refused."""
+    """A setting of ``Config`` or ``Sampling``, or a request's own, holds a value that is refused."""
 
 
 class InvalidArgumentError(RefusalError):
@@ -63,7 +59,10 @@ class ContextOverflowError(RefusalError):
 
 
 class ArgumentTypeError(TypeError):
-    """An argument of a call is of a type that is refused; the message names it and the type it must be. A setting of the wrong type is an :class:`InvalidSettingError`."""
+    """An argument of a call is of a type that is refused; the message names it and the type it must be.
+
+    A setting of the wrong type is an :class:`InvalidSettingError`.
+    """
 
 
 class EngineError(RuntimeError):
@@ -71,7 +70,7 @@ class EngineError(RuntimeError):
 
 
 class InternalError(RuntimeError):
-    """A fault of this library, found before it could spoil the conversation, such as a loop that made no progress; the conversation stays usable, as after any failed action."""
+    """A fault of this library, found before it could spoil the conversation, which stays usable."""
 
 
 def with_template_reason(refusal: str, reason: str | None) -> str:
@@ -84,10 +83,9 @@ LIBRARY_ERRORS = (RefusalError, ArgumentTypeError, EngineError, InternalError)
 
 
 def raising_library_errors_only(cls: type) -> type:
-    """``cls`` with every public method and property raising only :data:`LIBRARY_ERRORS`, another exception raised as :class:`InternalError` naming the action and the cause.
+    """``cls`` with every public method and property raising only :data:`LIBRARY_ERRORS`, others as :class:`InternalError`.
 
-    What reaches the caller of a generator a method returns is not covered;
-    a class that streams wraps its own steps.
+    A generator a method returns is not covered; a class that streams wraps its own steps.
     """
     for name, member in list(vars(cls).items()):
         # A name holding a double underscore is machinery around a method, not the interface.
@@ -102,7 +100,10 @@ def raising_library_errors_only(cls: type) -> type:
 
 
 def _raising_library_errors(action, owner: str):
-    """``action``, raising another exception than :data:`LIBRARY_ERRORS` as :class:`InternalError`, and arguments its signature does not take as :class:`ArgumentTypeError`."""
+    """``action``, raising another exception than :data:`LIBRARY_ERRORS` as :class:`InternalError`.
+
+    Arguments its signature does not take raise :class:`ArgumentTypeError`.
+    """
     signature = inspect.signature(action)
 
     @functools.wraps(action)

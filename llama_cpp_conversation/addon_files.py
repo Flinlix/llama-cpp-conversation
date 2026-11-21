@@ -1,8 +1,4 @@
-"""What a model needs beyond its template: its add-on file, and the sampling it runs with.
-
-An add-on file holds what the model's GGUF and its template do not tell, and is
-checked as the model loads.
-"""
+"""What a model needs beyond its template: its add-on file, checked as it loads, and the sampling it runs with."""
 
 from __future__ import annotations
 
@@ -36,10 +32,9 @@ def template_fingerprint(template: str) -> str:
 
 
 def addon_file(model_path: str | None, template: str | None) -> dict:
-    """A model's add-on file, with ``sampling``, ``call``, ``reasoning_on`` and ``reasoning_levels`` always present, possibly empty.
+    """A model's add-on file, its ``sampling``, ``call``, ``reasoning_on`` and ``reasoning_levels`` always present.
 
-    The file beside the model, with its name and ``.json``, if it names the
-    model's template; else a file in :data:`SHIPPED_ADDONS` that names it.
+    The file beside the model where it names the model's template, else one in :data:`SHIPPED_ADDONS` that does.
 
     Raises:
         ValueError: If the file found is malformed, or the file beside the
@@ -146,8 +141,7 @@ def with_model_sampling(config: Config, recommended: Mapping[str, float],
                         addon: dict) -> Config:
     """``config`` with each sampling field it leaves unset taken from the model.
 
-    Each field takes the add-on file's value, else the model's own, else
-    llama.cpp's default.
+    Each takes the add-on file's value, else the model's own, else llama.cpp's default.
 
     Args:
         recommended: The sampling the model states for itself, as

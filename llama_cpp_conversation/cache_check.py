@@ -1,9 +1,6 @@
 """The ``check_cache`` setting's check: the cache holds what a fresh begin of its conversation holds.
 
-A fresh begin renders the whole conversation and reaches every place in the
-cache from nothing, so it is the measure for every faster path an action took.
-The begin runs on a context of its own that reads the model's tokens and
-decodes nothing.
+The begin runs on a context of its own that reads the model's tokens and decodes nothing.
 """
 
 from __future__ import annotations
@@ -99,11 +96,7 @@ def check_cache(held: list[int], conversation: Conversation, unreadable_result: 
                 config, build, *, prompted: bool) -> None:
     """Raise :class:`InternalError` where ``held``, the cache's tokens, disagree with a fresh begin of ``conversation``.
 
-    Once the work after a reply has ended, the cache may hold less than the
-    fresh begin or more, as far as each decodes ahead of the next question,
-    but no token of its own where the two overlap. Where the model is about
-    to read it, ``prompted``, it holds exactly the fresh render with the
-    generation prompt.
+    Where ``prompted`` they must match exactly; otherwise they must agree wherever both hold tokens.
 
     Args:
         build: Makes a conversation's cache from a context, its templates and

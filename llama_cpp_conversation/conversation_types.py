@@ -26,9 +26,7 @@ class ChatToolCall(TypedDict):
 class ChatMessage(TypedDict, total=False):
     """A Chat Completions message: a system prompt, a question, a reply with its calls, or a tool's result.
 
-    ``role`` and ``content`` are required; ``reasoning_content`` and
-    ``tool_calls`` belong to a reply and may be left out, and a tool's result
-    names the call it answers in ``tool_call_id``.
+    ``role`` and ``content`` are required; a reply may add ``reasoning_content`` and ``tool_calls``.
     """
 
     role: Required[Literal["system", "user", "assistant", "tool"]]

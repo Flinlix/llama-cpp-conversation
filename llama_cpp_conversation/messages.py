@@ -93,10 +93,9 @@ _FREE_RUN = 1000
 
 
 def calling_message(text: str, calls: list[ToolCall], first_id: int = 0) -> dict:
-    """An assistant message holding ``text`` and ``calls``, each under the id it carries, or, where it carries none, numbered from ``first_id``.
+    """An assistant message holding ``text`` and ``calls``, each under its id, else numbered from ``first_id``.
 
-    A call that could not be read is written under :data:`UNKNOWN_FUNCTION`,
-    marked as one.
+    A call that could not be read is written under :data:`UNKNOWN_FUNCTION`, marked as one.
     """
     numbered = itertools.count(first_id)
     return {"role": "assistant", "content": text, "tool_calls": [

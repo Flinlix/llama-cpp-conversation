@@ -49,3 +49,30 @@ stretch it dropped, and an id outside that range fails that search.
 scripted model, with the small invented templates it renders in
 `llama_cpp_conversation/testing/invented_templates.py`, for tests of code that
 drives a wrapper without loading a model.
+
+**How `FakeContext` behaves.**
+
+- It renders with a template's own renderer, the one a model is loaded with.
+  Only the tokenizer is a stand-in: one token per character, and, where
+  special-token parsing is on, one per tag-shaped text. A tag typed into a
+  message is tokenized with parsing off, so it stays its characters. With
+  `merges`, a space also merges with the letter or digit after it.
+- The tags it lists are those the template spells or writes, and each closing
+  tag among them without its slash. Where the fixture says `adds_bos`, `BOS`
+  comes first where the opener is asked for.
+- A generation draws, in this order: the next of `call_script` where a call's
+  opening may be drawn, else the next of `replies` without the tokens
+  withheld, else `gen_text` cut or padded to `gen_tokens`; then the first tag
+  of the closing after a reply (the fixture's `turn_end_token`, else its
+  end-of-sequence tag) unless that tag may not be drawn; then the end of
+  generation. The end-of-sequence tag, and each tag the fixture's
+  `ends_generation` lists, end a generation too.
+- `before_reply` is handed the cache's text before each generation, so that a
+  test can compare it with the template's render at that moment.
+- Every decode lands at the cache's end, and each cache edit asserts the
+  ability it needs, so a wrapper that cuts a cache that cannot cut, or shifts
+  one that cannot shift, fails there.
+- `stated_render` renders with the variables the fixture states for
+  `reasoning` and an effort level, none read off the template. A
+  conversation begun with tools is written with the fixture's template for
+  tools, where it gives one.

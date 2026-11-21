@@ -1,9 +1,6 @@
-"""What a template's renders allow a conversation to save: each a pure function of a render callable.
+"""What a template's renders allow a conversation to save, each check a pure function of ``render(messages, generation_prompt)``.
 
-``render(messages, generation_prompt)`` returns the template's render, or
-``None`` where it refuses the shape. Each check renders probe conversations of
-its own, with the conversation's system message, tools and reasoning already
-bound into ``render``.
+``render`` gives ``None`` where the template refuses the shape.
 """
 
 from __future__ import annotations
@@ -97,7 +94,10 @@ def windows_are_exact(render: Render, system: list[dict], tag_after,
 
 def rest_stays_after_a_drop(render: Render, system: list[dict],
                             probes: tuple[list[dict], ...] = _WINDOW_PROBES) -> bool:
-    """Whether the template writes the exchanges after the oldest as before once the oldest goes, as one that numbers its messages or its calls does not; ``probes`` as :func:`windows_are_exact` takes them."""
+    """Whether the template writes the exchanges after the oldest as before once the oldest goes.
+
+    One that numbers its messages or its calls does not; ``probes`` as :func:`windows_are_exact` takes them.
+    """
     stand_in = [{"role": "user", "content": STAND_IN}]
     exchanges = [list(e) for e in probes[:3]]
     whole = render(system + sum(exchanges, []) + stand_in, True)

@@ -97,7 +97,7 @@ def moments_of_this_year() -> list[datetime]:
 
 
 class _RememberingSandbox(ImmutableSandboxedEnvironment):
-    """The immutable sandbox, its answer on each attribute remembered by the kind of object it is read on and the attribute's name, the only two things that answer depends on.
+    """The immutable sandbox, its answer on each attribute remembered by the object's kind and the attribute's name.
 
     See docs/decisions/0004-the-library-renders-the-template.md.
     """
@@ -153,10 +153,7 @@ def texts_held(text: str) -> tuple[str, ...]:
 
 
 class ModelTemplate:
-    """The chat template a model ships, and renders of it.
-
-    Built from the template's text and the text of the model's end-of-sequence
-    token, which some templates write.
+    """The chat template a model ships, and renders of it, built from its text and the end-of-sequence token's text.
 
     Raises:
         ValueError: If ``text`` is not valid template code, naming where and why.

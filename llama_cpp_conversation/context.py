@@ -1,9 +1,6 @@
-"""KV-cache operations: tokenize, prefill, the steps a generation takes, evict and shift.
+"""KV-cache operations on a loaded model: tokenize, prefill, the steps a generation takes, evict and shift.
 
-Owns the model and the context, reads the sampling the model's GGUF
-recommends, and builds each generation's sampler. What the cache should hold
-is decided by the caller, and how a generation goes on by
-:mod:`llama_cpp_conversation.generation`.
+What the cache should hold is decided by the caller.
 """
 
 from __future__ import annotations
@@ -133,10 +130,7 @@ class KVContext:
 
     @property
     def can_cut_tail(self) -> bool:
-        """Whether the cache takes a removal from a position to its end.
-
-        A cache that shifts always does; one that cannot shift may still,
-        where only positions, not a running state, keep it from shifting.
+        """Whether the cache takes a removal from a position to its end; one that shifts always does.
         """
         return self._can_cut_tail
 
@@ -164,10 +158,7 @@ class KVContext:
         return self._backend.eos_text(self._vocab)
 
     def recommended_sampling(self) -> dict[str, float]:
-        """The sampling the model's GGUF states, by :class:`Sampling`'s names.
-
-        A penalty window stated as ``-1`` is the whole context, given as
-        :attr:`context_size`.
+        """The sampling the model's GGUF states, by :class:`Sampling`'s names; a penalty window of ``-1`` is the context's size.
 
         Raises:
             ValueError: If the GGUF states one of them as text that is no number.
@@ -294,7 +285,9 @@ class KVContext:
         assert held is None, "a state saved at a position holds the window the next token there attends over"
 
     def remove_from(self, pos: int) -> int | None:
-        """Remove every cached token from ``pos`` to the end of the sequence; ``0``, the cache emptied, where a compact window cache no longer holds the window the next token at ``pos`` attends over, else ``None``.
+        """Remove every cached token from ``pos`` on; ``0``, the cache emptied, where a compact window cache now falls short.
+
+        It falls short where it no longer holds the window the next token at ``pos`` attends over; else ``None``.
 
         Raises:
             RuntimeError: If the cache refuses a partial removal.
@@ -425,11 +418,9 @@ class KVContext:
 
 
 def _candidates_before_penalties(sampling: DrawnSampling, window: int) -> int | None:
-    """How many of the likeliest tokens the penalties may be applied to alone, every draw unchanged; ``None`` where all of them must be.
+    """How many of the likeliest tokens the penalties may be applied to alone, every draw unchanged; ``None`` for all.
 
-    Penalties that only lower a token's logit lower at most ``window``
-    tokens, those of the window, so the tokens a later top-k of ``k`` keeps
-    are among the ``k + window`` likeliest before them. Greedy keeps one.
+    Penalties lower at most ``window`` tokens, so a later top-k of ``k`` keeps tokens among the ``k + window`` likeliest.
     """
     lowers_only = sampling.repetition_penalty >= 1.0 and sampling.presence_penalty >= 0.0 \
         and sampling.frequency_penalty >= 0.0
@@ -442,8 +433,7 @@ def _candidates_before_penalties(sampling: DrawnSampling, window: int) -> int | 
 def _physical_cores() -> int:
     """The physical cores this process may run on, at most as many as its CPU quota allows.
 
-    Where the system does not say which core a thread runs on, more than
-    four threads are taken to run two to a core.
+    Where the system does not say, more than four threads are taken to run two to a core.
     """
     cpus = (sorted(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity")
             else range(os.cpu_count() or 1))

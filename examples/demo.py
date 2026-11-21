@@ -1,4 +1,4 @@
-"""End-to-end demo of the KV-cache manager against a real GGUF model.
+"""End-to-end demo of the chat library against a real GGUF model.
 
 The model file is given on the command line; the rest of the config defaults
 to a CPU run and can be changed to match your hardware.

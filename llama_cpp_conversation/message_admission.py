@@ -1,4 +1,4 @@
-"""Admitting a new message: refusing one the template does not write next or that cannot fit once the older exchanges go, making way for a question by closing an open turn or joining an unanswered question, and cutting a question too long to its end."""
+"""Admitting a new message: refusing one that cannot be written or fit, making way for a question, cutting one too long."""
 
 from __future__ import annotations
 
@@ -71,7 +71,10 @@ class MessageAdmission:
         self._newest_exchange = newest_exchange
 
     def with_open_turns_closed(self, messages: list[dict]) -> list[dict]:
-        """``messages`` with each turn left open before a later question closed as that question closes it live: as it stands where the template writes the question after it, else each call still owed told it was not run, then an empty reply after, else the turn taken out and the two questions joined."""
+        """``messages`` with each turn left open before a later question closed as that question closes it live.
+
+        The ways, in order, are in docs/decisions/0032-every-question-gets-a-reply.md.
+        """
         turns = open_turns(messages)
         if not turns:
             return messages
@@ -102,11 +105,9 @@ class MessageAdmission:
 
     # ----- nothing blocks a question ------------------------------------------------------
     def make_way_for(self, question: dict, limit: int, generation_prompt: bool) -> dict | None:
-        """Close a turn a call left open, and join ``question`` to an unanswered one where the template writes no two questions in a row; the joined question, taken out to be added again, or ``None``.
+        """Close a turn a call left open, and join ``question`` to an unanswered one; the joined question, or ``None``.
 
-        Where the two joined would not fit in ``limit`` beside the system
-        prompt, the unanswered one goes instead, counted as evicted. See
-        docs/decisions/0032-every-question-gets-a-reply.md.
+        Where the two would not fit in ``limit``, the unanswered one goes; see docs/decisions/0032-every-question-gets-a-reply.md.
         """
         if self._turn_open():
             self._close_open_turn(question)
@@ -129,7 +130,10 @@ class MessageAdmission:
         return joined
 
     def _close_open_turn(self, question: dict) -> None:
-        """Close the open turn ahead of ``question``: each call still owed is told it was not run, and a turn waiting for its reply gets an empty one where the template needs it; the turn is taken out where the template writes neither."""
+        """Close the open turn ahead of ``question``: calls still owed are told they were not run, an empty reply added where needed.
+
+        The turn is taken out where the template writes neither.
+        """
         start = len(self._state.messages)
         owed = unanswered(self._state.messages)
         self._state.messages += [result_message(call.name or UNKNOWN_FUNCTION, call_id,
@@ -198,7 +202,7 @@ class MessageAdmission:
         return kept(low)
 
     def length_alone(self, message: dict, limit: int, generation_prompt: bool) -> int:
-        """How many tokens ``message`` takes beside the system turn alone, measured in their render only where its count comes within :data:`NEAR_THE_ROOM_TOKENS` of ``limit``."""
+        """How many tokens ``message`` takes beside the system turn, rendered only within :data:`NEAR_THE_ROOM_TOKENS` of ``limit``."""
         counted = self._state.checks.with_a_short_question + self._rendering.count_tokens(
             message["content"])
         if counted + NEAR_THE_ROOM_TOKENS <= limit:
@@ -206,7 +210,10 @@ class MessageAdmission:
         return self._rendering.length(system_part(self._state.messages) + [message], generation_prompt)
 
     def cut_newest_question_again(self) -> bool:
-        """Cut the newest message, a question, to the room beside the system turn again, as where a date the template writes grew since it was cut; whether it changed. The mark of an earlier cut is not kept twice."""
+        """Cut the newest message, a question, to the room beside the system turn again; whether it changed.
+
+        As where a date the template writes grew since; the mark of an earlier cut is not kept twice.
+        """
         question = self._state.messages[-1]
         text = question["content"]
         cut_before = text.startswith(QUESTION_CUT_MARK)
@@ -235,7 +242,7 @@ class MessageAdmission:
                 self._rendering.refusal_reason(messages, generation_prompt)))
 
     def ensure_within(self, limit: int, remedy: str, generation_prompt: bool = False) -> None:
-        """Refuse a conversation that still renders longer than ``limit`` once every exchange that can go was dropped, measured with the generation prompt where ``generation_prompt``.
+        """Refuse a conversation that still renders longer than ``limit`` once every exchange that can go was dropped.
 
         Raises:
             ContextOverflowError: With ``remedy`` as what to do instead.
@@ -245,7 +252,7 @@ class MessageAdmission:
             raise no_room_once_dropped(needed, limit, remedy)
 
     def ensure_fits_once_dropped(self, message: dict, limit: int) -> None:
-        """Refuse ``message``, which joins the newest exchange, where the conversation with it renders longer than ``limit`` once every older exchange is dropped, before any is.
+        """Refuse ``message``, which joins the newest exchange, where it cannot fit in ``limit`` even with every older exchange gone.
 
         Raises:
             ContextOverflowError: Naming what to do instead.

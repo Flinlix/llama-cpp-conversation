@@ -1,7 +1,6 @@
-"""Decoding ahead of the next question from a render of the newest exchanges alone, and dropping the oldest exchanges in such renders, where the template writes them as the whole render does.
+"""Decoding ahead from a render of the newest exchanges alone, and dropping the oldest in such renders.
 
-:class:`Windows` holds no state of its own: it reads and changes the
-conversation's state, and is given its cache. See docs/decisions/0026-renders-are-windows-of-the-newest-exchanges.md.
+See docs/decisions/0026-renders-are-windows-of-the-newest-exchanges.md.
 """
 
 from __future__ import annotations
@@ -143,10 +142,7 @@ class Windows:
                         bound: int, gone: list[dict]) -> bool:
         """Remove the oldest exchange, just dropped, from the cache, which begins with ``held``; nothing from ``bound`` on.
 
-        After the drop, the cache up to the tag that ended ``held`` is the
-        render of the system message and the oldest two exchanges kept, up to
-        the tag after the first one's reply, and everything after that tag is
-        as before.
+        The cache before the tag that ended ``held`` then reads as the render of the system message and the oldest two kept.
         """
         wanted = self._rendering.head(self._state.messages, through=0,
                                       with_generated_turns=self._state.checks.tool_windows)

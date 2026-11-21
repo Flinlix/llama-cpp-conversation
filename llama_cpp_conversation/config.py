@@ -21,10 +21,7 @@ UNQUANTIZED_KV_CACHE_TYPE = "f16"
 class Config:
     """Runtime configuration for :class:`~llama_cpp_conversation.wrapper.ChatWrapper`, every value checked where it is made.
 
-    The eight model sampling fields, ``temperature`` to
-    ``penalty_window_tokens``, left ``None`` take the model's own when it
-    loads, value by value: its add-on file's, else what its GGUF states, else
-    llama.cpp's default. See docs/guide/configuration.md.
+    A sampling field left ``None`` takes the model's own when it loads; see docs/guide/configuration.md.
 
     Attributes:
         model_path: Path to the GGUF model file. Loading refuses without one.
@@ -281,8 +278,7 @@ class Config:
 def ensure_types(settings) -> None:
     """Refuse a field of the dataclass ``settings`` whose value is of no type its annotation names.
 
-    A ``float`` field takes an ``int`` too, and only a finite number; no
-    number field takes a ``bool``.
+    A ``float`` field takes an ``int`` too, and only a finite number; no number field takes a ``bool``.
 
     Raises:
         InvalidSettingError: Naming the first such field.
@@ -344,9 +340,7 @@ def ensure_token_cap(tokens: int | None, name: str) -> None:
 class Sampling:
     """Sampling settings for one request, overriding the :class:`Config`'s.
 
-    Every field left ``None`` keeps the value the wrapper was built with, so an
-    empty ``Sampling`` changes nothing. A setting is refused where
-    :class:`Config` refuses it, by the same checks.
+    A field left ``None`` keeps the wrapper's value; each is checked as :class:`Config` checks it.
 
     Attributes:
         temperature: As :attr:`Config.temperature`.

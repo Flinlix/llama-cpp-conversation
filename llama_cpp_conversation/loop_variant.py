@@ -6,12 +6,9 @@ from .errors import InternalError
 
 
 class LoopVariant:
-    """The measure of one run of a loop, given at the start of each pass.
+    """The measure of one run of a loop, given at the start of each pass: a whole number, or a tuple of them.
 
-    A measure is a whole number of at least 0, or a tuple of them compared in
-    order; each pass must give one smaller than the pass before, which no
-    loop can do for ever. A pass that does not raises :class:`InternalError`
-    at once, naming the loop, instead of letting it run on.
+    A pass that gives no smaller one than the pass before raises :class:`InternalError`, naming the loop.
     """
 
     __slots__ = ("_loop", "_last")

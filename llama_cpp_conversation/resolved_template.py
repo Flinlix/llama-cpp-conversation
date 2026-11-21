@@ -102,11 +102,7 @@ class ResolvedTemplate:
 
     def render(self, messages: list[dict], tools: list[dict] | None = None, *,
                generation_prompt: bool = False, reasoning: bool | str | None = None) -> str | None:
-        """``messages`` as the model's template writes them, ``None`` where it refuses that shape.
-
-        A reply's thought, held under ``reasoning_content``, is handed to the
-        template in the form it reads a past reply's thought in.
-        """
+        """``messages`` as the model's template writes them, a thought in the form it reads one; ``None`` where it refuses them."""
         return self._model_render(self._as_template_reads(messages), tools,
                                   generation_prompt=generation_prompt, reasoning=reasoning,
                                   variables=self.properties.declaration_variables)
@@ -151,7 +147,10 @@ class ResolvedTemplate:
         return self.properties.reasoning.generation_prompt
 
     def _shortest_answer_tokens(self, context) -> int:
-        """Tokens the shortest reply that holds an answer takes, in the reasoning mode that needs most: what the model writes before its answer, one token of answer, and the closing after it."""
+        """Tokens the shortest reply that holds an answer takes, in the reasoning mode that needs most.
+
+        That is what comes before its answer, one token of answer, and the closing after it.
+        """
         def tokens(text: str) -> int:
             return len(context.tokenize(text, add_special=False, parse_special=True))
         reasoning = self.properties.reasoning
@@ -167,7 +166,7 @@ class ResolvedTemplate:
         return max(before_answer) + 1 + self.properties.n_closing_tokens
 
     def reply_header(self, reasoning: bool | str = False) -> tuple[str, str] | None:
-        """The start and end of a header naming a reply's reader, as :func:`~llama_cpp_conversation.reply_text.reply_header` reads them, worked out once for each reasoning mode."""
+        """The start and end of a header naming a reply's reader, worked out once for each reasoning mode."""
         mode = bool(reasoning)          # a level reasons with the prompt reasoning on writes
         if mode not in self._reply_headers:
             properties = self.properties
@@ -204,10 +203,7 @@ class ResolvedTemplate:
     def call_boundary(self, recognizes_calls: bool = True, withhold: bool = False) -> CallBoundary:
         """Where a generated call opens and closes and where a reply ends, as generation reads it.
 
-        Without ``recognizes_calls`` no call is recognized, so the reply is certain
-        to close. With ``withhold`` a call's opening token is also never
-        drawn; a call that opens with plain text cannot be kept from the model
-        that way, so the reply ends where such a call opens.
+        With ``withhold`` a call's opening token is never drawn; a reply ends where a plain-text opening comes.
         """
         boundary = self.properties.boundary
         if recognizes_calls:
@@ -223,8 +219,7 @@ class ResolvedTemplate:
                    parameters: dict[str, dict] | None = None) -> list[ToolCall]:
         """The calls in what a model generated between a call's opening and its closing.
 
-        ``parameters`` is the parameter schema of each declared tool, by its
-        name, as :func:`~llama_cpp_conversation.call_parsing.parse_calls` reads it.
+        ``parameters`` is each declared tool's parameter schema, by its name.
 
         Raises:
             ValueError: If the text is not a call this model's format reads.
@@ -237,10 +232,9 @@ class ResolvedTemplate:
                            properties.json_call_id_key)
 
     def ensure_names_read_back(self, names: list[str], field: str) -> None:
-        """Refuse a tool name this model's call format writes so that a call to it reads back as another name, or as none.
+        """Refuse a tool name this model's call format writes so that a call to it reads back as another name, or none.
 
-        Checked only where the template writes a call as the model does, as a
-        plain name shows; a call format an add-on file names may differ.
+        Checked only where the template writes a call as the model does; an add-on file's format may differ.
 
         Raises:
             InvalidArgumentError: Naming ``field`` and the first such name.
@@ -374,10 +368,9 @@ class Capabilities:
 
 
 class ResolvedTemplates:
-    """This model's default chat template and, where it ships one, its template for a conversation that declares tools, each recovered and proven usable.
+    """This model's default chat template and, where it ships one, its template for tools, each recovered and proven usable.
 
-    A template for tools that cannot be recovered leaves the model with its
-    default template, every conversation with tools refused with the cause.
+    A template for tools that cannot be recovered leaves conversations with tools refused, with the cause.
 
     Args:
         context: The cache context to read the model through.

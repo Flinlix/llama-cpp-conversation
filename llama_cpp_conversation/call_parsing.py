@@ -1,10 +1,4 @@
-"""Reading a model's tool calls back out of the text it generated.
-
-A call is read in the one shape the model's template writes it in: a JSON
-object, read by the keys the template names the function and its arguments
-with, or the delimiters recovered from that template. Nothing here runs
-anything; see :mod:`llama_cpp_conversation.tools` for that half.
-"""
+"""Reading a model's tool calls back out of the text it generated, in the one shape its template writes them in."""
 
 from __future__ import annotations
 
@@ -490,8 +484,7 @@ def _json_types(value) -> set[str]:
 def _parse_elements(text: str, call_body: CallBody) -> Any:
     """Read a nested value written in this model's own member and item delimiters.
 
-    A run of items is a list, and anything else an object; an object whose
-    only key is the items' own name is written the same way and reads as a list.
+    A run of items is a list, anything else an object; an object keyed only by the items' name reads as a list.
     """
     if text.startswith(call_body.item_open):
         try:
@@ -569,10 +562,9 @@ def _starts_a_value(before: str, call_body: CallBody) -> bool:
 
 
 def _split_on(text: str, separator: str, call_body: CallBody) -> list[str]:
-    """Split on ``separator`` where it is not nested inside something.
+    """Split on ``separator`` where it is not nested inside an object, a list or a quoted string.
 
-    Objects and lists count as nesting, and so does a quoted string unless this
-    model's quote also occurs inside its own structural delimiters.
+    A quote counts as nesting only where this model's quote is not among its own delimiters.
     """
     if not separator:
         return [text] if text.strip() else []

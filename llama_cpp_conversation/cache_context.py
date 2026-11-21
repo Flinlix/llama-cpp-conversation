@@ -1,9 +1,6 @@
-"""What resolving a template and running a conversation call on a cache context.
+"""What resolving a template and running a conversation call on a cache context: two protocols.
 
-Two protocols: the model as it is read (its tokenizer, tags, chat template and
-the sampling it recommends), and that plus the cache a conversation is decoded
-into. Each is checked once, where a context is adopted, rather than at the
-first call that finds a member missing or taking other arguments.
+The model as it is read, and that plus its cache; each is checked once, where a context is adopted.
 """
 
 from __future__ import annotations
@@ -50,14 +47,15 @@ class ModelReader(Protocol):
         """The text of the model's end-of-sequence token, which a template may write as ``eos_token``."""
 
     def model_fingerprint(self) -> str:
-        """What tells this model's tokens apart from another model's: the same on every load of the same model, and different where its vocabulary, its chat templates or its weights' description differ."""
+        """What tells this model's tokens apart from another model's, the same on every load of the same model.
+
+        It differs where the vocabulary, the chat templates or the weights' description differ.
+        """
 
     def recommended_sampling(self) -> Mapping[str, float]:
-        """The sampling values the model states for itself, by the names :class:`Sampling` gives them; empty where it states none.
+        """The sampling values the model states for itself, by the names :class:`Sampling` gives them; empty for none.
 
-        Only the fields an add-on file may set too are taken
-        (:data:`~llama_cpp_conversation.addon_files.SAMPLING_FIELDS`); another name is
-        refused where the wrapper is built.
+        Only the fields of :data:`~llama_cpp_conversation.addon_files.SAMPLING_FIELDS` are taken; another is refused.
         """
 
 
@@ -88,11 +86,9 @@ class CacheContext(ModelReader, Protocol):
 
     def sampled_tokens(self, sampling: DrawnSampling,
                        withheld_tokens: tuple[int, ...]) -> Generator[int, None, None]:
-        """Tokens drawn one at a time, each from the logits of the newest decode.
+        """Tokens drawn one at a time, each from the logits of the newest decode, never one of ``withheld_tokens``.
 
-        Drawn with every value of ``sampling``, each of them set, but its
-        ``seed``, whose ``None`` draws a fresh one; no token of
-        ``withheld_tokens`` is drawn. Closing it frees what drawing took.
+        A ``seed`` of ``None`` draws a fresh one; closing it frees what drawing took.
         """
 
     def decode_generated(self, token_ids: list[int], start_pos: int) -> None:
@@ -105,7 +101,10 @@ class CacheContext(ModelReader, Protocol):
         """Remove the tokens from ``start`` to just before ``end``, those after them moving down."""
 
     def remove_from(self, pos: int) -> int | None:
-        """Remove every cached token from ``pos`` to the end; where the cache then holds less, as one that keeps only a window of positions may, where it now ends, else ``None``."""
+        """Remove every cached token from ``pos`` to the end; where the cache now ends, where it holds less, else ``None``.
+
+        A cache that keeps only a window of positions may hold less.
+        """
 
     def save_state(self):
         """The cache's state as it is, for :meth:`restore_state`; ``None`` where the cache can never save one, which is read once where the context is adopted.
