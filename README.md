@@ -45,11 +45,11 @@ machine, is in its
 
 <!-- start: install -->
 ```bash
-CMAKE_ARGS="-DGGML_NATIVE=ON" pip install --no-binary llama-cpp-python "git+https://github.com/Flinlix/llama-cpp-conversation@v3.2.0"   # CPU
-CMAKE_ARGS="-DGGML_CUDA=on" pip install --no-binary llama-cpp-python "git+https://github.com/Flinlix/llama-cpp-conversation@v3.2.0"     # Nvidia GPU
+CMAKE_ARGS="-DGGML_NATIVE=ON" pip install --no-binary llama-cpp-python "git+https://github.com/Flinlix/llama-cpp-conversation@v3.2.1"   # CPU
+CMAKE_ARGS="-DGGML_CUDA=on" pip install --no-binary llama-cpp-python "git+https://github.com/Flinlix/llama-cpp-conversation@v3.2.1"     # Nvidia GPU
 ```
 
-The package is installed from GitHub; it is not published elsewhere. `@v3.2.0`
+The package is installed from GitHub; it is not published elsewhere. `@v3.2.1`
 names a release; without it, the newest commit is installed. Each
 [release](https://github.com/Flinlix/llama-cpp-conversation/releases) also carries
 the built package.
