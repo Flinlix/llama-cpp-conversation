@@ -220,7 +220,8 @@ def _placed_with_shared_markers(render, rendered: str, messages: list[dict],
         return None
     parts = markers.pattern.split(marked)
     written_markers = parts[1::2]
-    if any(written_markers.count(markers[0]) != len(markers) for markers in groups.values()
+    # A text the template never writes, such as a result's name, places nothing either way.
+    if any(written_markers.count(markers[0]) not in (0, len(markers)) for markers in groups.values()
            if len(markers) > 1):
         return None                     # equal texts written other than once for each of them
     placed = _walk(rendered, parts, {markers[0]: values[markers[0]] for markers in groups.values()},

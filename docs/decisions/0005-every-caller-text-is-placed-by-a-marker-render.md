@@ -43,7 +43,11 @@ closings found nothing on templates that write no reply closing.
   number has a fixed width and is given in the names' sorted order, so that a
   template that sorts an object's names sorts the markers alike. Its fence of
   Q's is longer than any run of Q's before a digit in the render, so that no
-  text can spell a marker.
+  text can spell a marker. Where equal texts are marked alike, a group the
+  template never writes, such as results' names on a template that leaves
+  them out, places nothing and is no reason to refuse (found on 2026-11-21 by
+  the real-model test on Ministral 8B 2410: two equal clock calls with equal
+  results were refused).
 
 ## Consequences
 

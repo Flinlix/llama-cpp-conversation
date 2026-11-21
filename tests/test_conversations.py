@@ -25,7 +25,7 @@ import pytest
 
 import llama_cpp_conversation
 from llama_cpp_conversation import (ChatWrapper, Config, ContextOverflowError, InvalidArgumentError,
-                        TemplateRefusedError)
+                        TemplateRefusedError, UnsupportedError)
 from llama_cpp_conversation.history_forms import answer_in_order, read_messages
 from llama_cpp_conversation.messages import QUESTION_CUT_MARK
 from llama_cpp_conversation.reply_text import begins_in_thought
@@ -3575,3 +3575,19 @@ def test_a_thought_edited_in_the_conversation_is_begun_as_given_and_one_left_out
     held = again._context.text_of(again._context.cache)
     assert ("Geändert." in held) == (thought is not None)
     assert ("Erst nachsehen." in held) == (thought is None)
+
+
+@pytest.mark.parametrize("stem", _TOOL_TEMPLATES)
+def test_two_equal_calls_with_equal_results_are_written_on_every_template(stem):
+    """Equal texts are split as one group each, a result's name included, which a template may never write."""
+    run = _Run(stem, replies=["Twelve."] * 4)
+    clock = ToolSpec("clock", "The current time.", {"type": "object", "properties": {}})
+    history = []
+    for _ in range(2):
+        history.append({"role": "user", "content": "What time is it?"})
+        history += tool_turn(ToolCall("clock", {}), Result("clock", "12:00"), "It is 12:00.")
+    try:
+        run.begin(history, tools=[clock])
+    except UnsupportedError:
+        return                          # a template that keeps no system prompt
+    assert run.chat.reply("And now?").finish().text
