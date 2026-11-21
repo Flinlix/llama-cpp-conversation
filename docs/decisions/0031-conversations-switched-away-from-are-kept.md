@@ -28,6 +28,11 @@ feature off.
 - A failed action puts the kept conversations back as they were.
 - The whole cache is saved for every sequence, so that it keeps the positions
   its window layers no longer attend over (0060, 2026-11-21).
+- A shift waits in llama.cpp for the next decode; a state saved before it
+  holds the keys unshifted, so the newest token is decoded again first where a
+  shift waits (found by review on 2026-11-21: the switch back then answered
+  from wrongly placed keys, the most likely next token changed). Where that
+  token is not known, the conversation is not kept.
 
 ## Consequences
 

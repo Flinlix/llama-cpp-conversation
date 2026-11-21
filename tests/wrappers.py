@@ -141,8 +141,9 @@ def _rendered_pieces(context, messages, declarations, generation_prompt, reasoni
     texts, owner_of, by_text = {}, {}, {}
 
     def mark(text, owner=None):
-        marker = by_text.setdefault(text, f"ZQ{len(texts)}QZ") if shares_equal_texts \
-            else f"ZQ{len(texts)}QZ"
+        # A fixed width, so that markers sort as their numbers do.
+        marker = by_text.setdefault(text, f"ZQ{len(texts):06d}QZ") if shares_equal_texts \
+            else f"ZQ{len(texts):06d}QZ"
         texts[marker] = text
         owner_of.setdefault(marker, []).append(owner)
         return marker
@@ -216,7 +217,9 @@ def _all_marked(value, mark):
     if isinstance(value, str):
         return mark(value) if value else value
     if isinstance(value, dict):
-        return {key: _all_marked(item, mark) for key, item in value.items()}
+        # Marked in the names' sorted order: a template that sorts them sorts the markers alike.
+        named = {key: mark(key) if key else key for key in sorted(value)}
+        return {named[key]: _all_marked(item, mark) for key, item in value.items()}
     if isinstance(value, list):
         return [_all_marked(item, mark) for item in value]
     return value

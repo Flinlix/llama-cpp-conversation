@@ -1140,3 +1140,22 @@ def test_no_gpu_layers_hands_the_engine_no_device_at_all(gpu_layers):
     backend.load_model("m.gguf", gpu_layers)
     # An empty list, its one entry the end mark, names no device; no list leaves the choice to the engine.
     assert asked == [(gpu_layers, True, None)] if gpu_layers == 0 else [(gpu_layers, False, False)]
+
+
+@pytest.mark.parametrize("shifted", [False, True])
+def test_a_whole_state_saved_while_a_shift_waits_decodes_the_newest_token_again_first(shifted):
+    """llama.cpp applies a shift at the next decode, so a state saved before it would hold the keys unshifted."""
+    calls = []
+    ctx = object.__new__(KVContext)
+    ctx._engine_context, ctx._max_batch_tokens = "ctx", 512
+    ctx._backend = SimpleNamespace(
+        decode=lambda c, tokens, pos, seq, logits, batch: calls.append(("decode", list(tokens), pos)),
+        kv_seq_rm=lambda c, seq, p0, p1: calls.append(("rm", p0, p1)) or True,
+        kv_seq_add=lambda c, seq, p0, p1, delta: calls.append(("add", p0, delta)),
+        save_whole_state=lambda c, seq: calls.append(("save",)) or b"state")
+    ctx.prefill(list(range(400)), 0, want_logits=False)
+    if shifted:
+        ctx.apply_eviction(10, 110)
+    del calls[:]
+    assert ctx.save_whole_state() == b"state"
+    assert calls == ([("rm", 299, -1), ("decode", [399], 299)] if shifted else []) + [("save",)]

@@ -484,3 +484,12 @@ def test_a_template_without_levels_reasons_as_it_does_by_default_or_not_at_all()
     assert w.conversation()["reasoning"] is False
     with pytest.raises(UnsupportedError):
         w.begin(opened("s"), reasoning=True, reasoning_level="high")
+
+
+@pytest.mark.parametrize("cap", [2, 3, 4])
+def test_a_reply_capped_too_short_for_a_thought_and_its_answer_answers(cap):
+    """Rule 11 under a small cap: a thought opens only where its opening, its closing and a token of answer fit."""
+    fake = FakeContext(REASONING, replies=["<thought>Denken lang lang</thought>Antwort."], writes_tags=True)
+    chat = ChatWrapper(Config(context_size=400, evict_above_fraction=0.9), context=fake)
+    chat.begin([{"role": "system", "content": "s"}], reasoning=True)
+    assert chat.reply("x", max_reply_tokens=cap).finish().text

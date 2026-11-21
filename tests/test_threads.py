@@ -8,8 +8,13 @@ from llama_cpp_conversation.errors import OutOfOrderError
 
 from llama_cpp_conversation.config import Config, generation_sampling
 from llama_cpp_conversation import ChatWrapper, InvalidArgumentError
+from llama_cpp_conversation import wrapper as wrapper_module
+from llama_cpp_conversation.eviction import Eviction
+from llama_cpp_conversation.publishing import conversation_of
+from llama_cpp_conversation.rendered_cache import RenderedCache
 from llama_cpp_conversation.generation import generate
 
+from tests import internals
 from tests.chat_messages import opened
 from llama_cpp_conversation.testing.fake_context import FakeContext
 from llama_cpp_conversation.testing.invented_templates import PLAIN, TOOLS
@@ -428,3 +433,48 @@ def test_a_failure_of_the_watch_on_a_reply_nobody_reads_is_logged(monkeypatch, c
     with caplog.at_level("ERROR", logger="llama_cpp_conversation"):
         w._end_unread_reply()
     assert "ending a reply nobody read failed" in caplog.text
+
+
+@pytest.mark.parametrize("cache", [dict(can_shift=False), dict(can_shift=False, can_cut_tail=True, window_tokens=8)],
+                         ids=["saves states", "keeps a window"])
+def test_a_begin_right_after_a_reply_decodes_only_the_conversation_it_begins(
+        monkeypatch, settles_in_the_background, cache):
+    """A begin that comes before the work a reply left has started does not decode that work first, for the conversation it leaves."""
+    monkeypatch.setattr(wrapper_module, "_AFTER_REPLY_PAUSE_S", 0.3)     # the begin comes within it
+    fake = FakeContext(PLAIN, gen_tokens=40, gen_text="Antwort " * 5, **cache)
+    chat = ChatWrapper(Config(context_size=4000, evict_above_fraction=0.75), context=fake)
+    chat.begin([{"role": "system", "content": "persona " * 8}])
+    for turn in range(400):
+        chat.reply(f"Frage {turn} mit etwas mehr Text " * 3).finish()
+        if internals.leaves_a_drop(chat):
+            break
+        chat.wait_idle()
+    assert internals.leaves_a_drop(chat), "no reply left a drop"
+    before = fake.total_prefilled()
+    chat.begin([{"role": "system", "content": "andere"}])
+    assert fake.total_prefilled() - before == len(internals.held_tokens(chat))
+
+
+def test_a_reader_during_an_eviction_sees_only_finished_conversations(monkeypatch):
+    """Rule 9: the trial states an eviction searches through are never what another thread reads."""
+    fake = FakeContext(PLAIN, can_shift=False, gen_text="Antwort " * 4, gen_tokens=32)
+    chat = ChatWrapper(Config(context_size=600, evict_above_fraction=0.8), context=fake)
+    chat.begin([{"role": "system", "content": "s"}])
+    for n in range(4):
+        chat.reply(f"Frage {n} " * 4).finish()
+    read, finished = [], {len(chat.conversation()["messages"])}
+    drop, publish = Eviction.drop_oldest_exchange, RenderedCache._publish
+
+    def reading(self, *args, **kwargs):
+        went = drop(self, *args, **kwargs)
+        read.append(len(chat.conversation()["messages"]))
+        return went
+
+    def publishing(self):
+        publish(self)
+        finished.add(len(conversation_of(self._published)["messages"]))
+    monkeypatch.setattr(Eviction, "drop_oldest_exchange", reading)
+    monkeypatch.setattr(RenderedCache, "_publish", publishing)
+    for n in range(4):
+        chat.reply(f"Neue lange Frage {n} " * 8).finish()
+    assert read and set(read) <= finished, (read, finished)

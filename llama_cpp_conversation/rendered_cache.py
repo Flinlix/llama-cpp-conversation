@@ -889,11 +889,11 @@ class RenderedCache:
         generated = GenerationAccumulator()
         results_cut = self.results_cut
         template = self.template
-        if recognizes_calls and self._state.tools and template.can_withhold_calls \
-                and self._generation_room(max_generated_tokens) < self._shortest_call_tokens():
-            # No call could close in the room left: the model answers in text instead.
-            recognizes_calls, withhold = False, True
         try:
+            if recognizes_calls and self._state.tools and template.can_withhold_calls \
+                    and self._generation_room(max_generated_tokens) < self._shortest_call_tokens():
+                # No call could close in the room left: the model answers in text instead.
+                recognizes_calls, withhold = False, True
             goes_on = text is None and self.turn_open
             reply_text = ReplyText(template.properties.reasoning,
                                    template.answer_opening(self.reasoning),
@@ -989,6 +989,9 @@ class RenderedCache:
             if reasoning is not None else (),
             thought_closing=tuple(context.tokenize(reasoning.thought_close, add_special=False,
                                                    parse_special=True))
+            if reasoning is not None else (),
+            thought_opening=tuple(context.tokenize(reasoning.thought_open.strip(),
+                                                   add_special=False, parse_special=True))
             if reasoning is not None else (),
             answer_room_tokens=self._config.answer_room_tokens)
         self._guards[id(template)] = (template, guard)
@@ -1568,8 +1571,10 @@ class RenderedCache:
         whole = list(self._memory.tokens)
         if not finishes_what_was_left:
             self._memory.forget_undecoded()
-        if not (finishes_what_was_left and self._memory.is_behind
-                and (self._context.can_shift or self._context.can_cut_tail)):
+        # A begin decodes only what it holds, unless the conversation it leaves is kept whole.
+        brings_up = finishes_what_was_left or self._config.kept_conversation_bytes > 0
+        if brings_up and not (finishes_what_was_left and self._memory.is_behind
+                              and (self._context.can_shift or self._context.can_cut_tail)):
             # What an interrupt left undecoded is otherwise decoded with what the action adds,
             # in one batch; a cache that goes back to saved states is brought up first, so that
             # the states it keeps are saved where they are pinned.

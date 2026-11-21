@@ -35,6 +35,10 @@ own errors deep inside a render.
   wrapper is refused and answered as a tool that raised.
 - `ToolRegistry.call` turns only an `Exception` into a result, so a stop such
   as Ctrl+C is never told to the model as a tool failure.
+- A value is walked level by level, each list and object once a level, so that
+  a value whose parts are shared is walked in time proportional to its size,
+  and one that holds itself is refused as nested too deep (found by review on
+  2026-11-21: 40 levels of shared parts took about 2^40 steps).
 
 ## Consequences
 

@@ -474,7 +474,7 @@ class FakeContext:
             elif isinstance(scripted, ScriptedCall):
                 yield from self._call_tokens(scripted)
             else:
-                yield from self._written(scripted)
+                yield from (token for token in self._written(scripted) if token not in withheld_tokens)
         else:
             for i in range(self.gen_tokens):
                 yield self._generated(self.gen_text[i] if i < len(self.gen_text) else "x")

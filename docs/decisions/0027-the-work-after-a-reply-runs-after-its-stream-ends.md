@@ -29,6 +29,12 @@ later.
   exchange limit is passed, and the question with its tags and a reply of its
   cap fit in the context beside the cache. This happens once in a row; the
   drop follows its reply. `inject` defers nothing.
+- An action that comes before the thread for this work has started lets the
+  work give way to it, as one that comes while the thread runs does: the work
+  stops after its first part and the action decodes the rest with its own
+  (found by review on 2026-11-21: a begin within the pause decoded 1,415 tokens
+  of the conversation it left, then threw them away). A begin brings the cache
+  up first only where the conversation it leaves is kept whole.
 
 ## Consequences
 

@@ -13,8 +13,9 @@ closings found nothing on templates that write no reply closing.
 
 ## Decision
 
-- Each render is made a second time with a marker (`QQ<n>MQQ`, letters and
-  digits that trimming, escaping and quoting leave whole) in place of every
+- Each render is made a second time with a marker (a fence of Q's, a number,
+  `M`, the fence again: letters and digits that trimming, escaping and quoting
+  leave whole) in place of every
   text of the caller's: a content, a thought, a call's name and string
   arguments, and every non-empty `description` of a declaration at any depth.
 - The real render must be the marked one with each marker replaced by its
@@ -36,6 +37,13 @@ closings found nothing on templates that write no reply closing.
 - Where texts repeat and a template compares them for equality, a failed
   split is tried once more with one marker per kind, role and text.
 - Each text is tokenized with special-token parsing off.
+- Argument names and a result's name are marked too, so that a tag typed into
+  either stays text (found by review on 2026-11-21: a key spelling the model's
+  end-of-text tag was held as that tag on 40 of 42 tool templates). A marker's
+  number has a fixed width and is given in the names' sorted order, so that a
+  template that sorts an object's names sorts the markers alike. Its fence of
+  Q's is longer than any run of Q's before a digit in the render, so that no
+  text can spell a marker.
 
 ## Consequences
 

@@ -33,8 +33,10 @@ from tests.chat_templates import STEMS, WEATHER, expected, fixture
 from llama_cpp_conversation.testing.fake_context import BOS, FakeContext
 from tests.internals import read_fragments_as
 from llama_cpp_conversation.testing import invented_templates
-from llama_cpp_conversation.testing.invented_templates import (JOINS_USER_TURNS, JSON_TOOLS, PLAIN, REFUSES_A_TEXT,
-                                      REFUSES_TWO_USER_TURNS, WRITES_TWO_QUESTIONS_REFUSES_A_TEXT, TOOLS)
+from llama_cpp_conversation import rendered_cache
+from llama_cpp_conversation.testing.invented_templates import (JOINS_USER_TURNS, JSON_TOOLS, PLAIN, REASONING,
+                                      REFUSES_A_TEXT, REFUSES_TWO_USER_TURNS,
+                                      WRITES_TWO_QUESTIONS_REFUSES_A_TEXT, TOOLS)
 from tests.wrappers import (UNGUARDED, add_tools, assert_cache_reads_as_rendered, assert_consistent,
                             begun_wrapper, tool_wrapper, rows, weather_registry, with_check_first)
 def _n_exchanges(wrapper):
@@ -1397,6 +1399,9 @@ _PLAIN_REPLY_CODE = {
         "common_prefix_length.<locals>.<genexpr>",
     },
     "split_render.py": {
+        "_Markers.apart_from",
+        "_Markers.marker",
+        "_Markers.pattern",
         "SplitRender._own_ends",
         "SplitRender._own_starts",
         "SplitRender.own_from",
@@ -2133,3 +2138,29 @@ else:
     done = subprocess.run([sys.executable, "-c", script, str(model)], capture_output=True, text=True,
                           timeout=120)
     assert done.returncode == 0, done.stderr
+
+
+def test_a_template_that_writes_only_the_newest_messages_is_refused_at_load():
+    """Rule 4's refusal: such a template would have every reply decode the whole render again."""
+    windowed = with_check_first(PLAIN, "{%- set messages = (messages[:1] + messages[-8:]) "
+                                       "if messages|length > 9 else messages -%}\n")
+    with pytest.raises(TemplateRefusedError) as refused:
+        ChatWrapper(Config(context_size=4000), context=FakeContext(windowed)).begin([{"role": "system", "content": "s"}])
+    assert "leaves older exchanges out" in str(refused.value)
+
+
+def test_the_answer_guard_is_worked_out_once_per_template_whatever_the_replies(monkeypatch):
+    """Rule 5: what keeps an answer from ending early is read once, not on every reply."""
+    built = []
+    real = rendered_cache.AnswerGuard
+
+    def counted(*args, **kwargs):
+        built.append(1)
+        return real(*args, **kwargs)
+    monkeypatch.setattr(rendered_cache, "AnswerGuard", counted)
+    fake = FakeContext(REASONING, gen_tokens=5, gen_text="Gern.")
+    chat = ChatWrapper(Config(context_size=2000), context=fake)
+    chat.begin([{"role": "system", "content": "s"}], reasoning=True)
+    for n in range(4):
+        chat.reply(f"Frage {n}").finish()
+    assert len(built) == 1

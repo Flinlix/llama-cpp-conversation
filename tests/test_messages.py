@@ -318,3 +318,19 @@ def test_a_result_out_of_the_order_of_its_calls_is_refused_as_messages(history):
     with pytest.raises(InvalidArgumentError) as refused:
         _read(history)
     assert refused.value.field == "messages"
+
+
+@pytest.mark.parametrize("role", [["user"], {"user": 1}, {"user"}, 5, None])
+def test_a_role_that_is_no_text_is_refused_naming_the_message(role):
+    with pytest.raises(InvalidArgumentError) as refused:
+        read_messages([{"role": role, "content": "x"}])
+    assert refused.value.field == "messages" and "messages[0]'s role" in str(refused.value)
+
+
+@pytest.mark.parametrize("field, given, refusal", [
+    ("tool_calls", {}, ArgumentTypeError), ("tool_calls", "", ArgumentTypeError), ("tool_calls", 0, ArgumentTypeError),
+    ("reasoning_content", [], InvalidArgumentError), ("reasoning_content", 0, ArgumentTypeError),
+    ("reasoning_content", False, ArgumentTypeError)])
+def test_an_empty_value_of_the_wrong_type_is_refused_as_a_full_one_is(field, given, refusal):
+    with pytest.raises(refusal):
+        read_messages([{"role": "user", "content": "q"}, {"role": "assistant", "content": "a", field: given}])

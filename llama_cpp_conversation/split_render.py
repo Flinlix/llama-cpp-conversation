@@ -23,7 +23,32 @@ from .errors import TemplateRefusedError
 from .loop_variant import LoopVariant
 
 # A marker: letters and digits only, so that trimming, escaping and quoting leave it whole.
-_MARKER = re.compile(r"(QQ\d+MQQ)")
+# Its number has a fixed width, so that markers sort as their numbers do.
+_MARKER_DIGITS = 6
+
+
+@dataclass(frozen=True)
+class _Markers:
+    """The form of one split's markers: ``fence`` digits ``M`` ``fence``, a fence that the render holds nowhere."""
+
+    fence: str
+
+    @staticmethod
+    def apart_from(rendered: str) -> _Markers:
+        """Markers whose fence of Q's the render holds nowhere before a digit, so that no text can spell one."""
+        fence = "QQ"
+        fence_variant = LoopVariant("choosing a marker's fence")
+        while re.search(fence + r"\d", rendered):
+            fence_variant.passes(len(rendered) - len(fence))
+            fence += "Q"
+        return _Markers(fence)
+
+    def marker(self, n: int) -> str:
+        return f"{self.fence}{n:0{_MARKER_DIGITS}d}M{self.fence}"
+
+    @functools.cached_property
+    def pattern(self) -> re.Pattern:
+        return re.compile(f"({self.fence}\\d{{{_MARKER_DIGITS}}}M{self.fence})")
 
 
 @dataclass(frozen=True)
@@ -95,14 +120,16 @@ def split_render(render: Callable[[list[dict], list[dict] | None], str | None],
         rendered = render(messages, declarations)
         if rendered is None:
             return None
-        marked_messages, marked_declarations, values = _marked(messages, declarations)
+        markers = _Markers.apart_from(rendered)
+        marked_messages, marked_declarations, values = _marked(messages, declarations, markers)
         marked = render(marked_messages, marked_declarations)
-        split = (_placed(rendered, marked, values, len(messages), written)
+        split = (_placed(rendered, marked, values, len(messages), written, markers)
                  if marked is not None else None)
         if split is not None:
             return split
         # A template that compares texts writes equal ones alike only where their markers are.
-        split = _placed_with_shared_markers(render, rendered, messages, declarations, written)
+        split = _placed_with_shared_markers(render, rendered, messages, declarations, written,
+                                            markers)
         if split is not None:
             return split
         # Once more, for a render that read the clock as it moved on between the two.
@@ -117,18 +144,18 @@ class _Value:
 
     text: str
     message: int                    # -1 for a declaration's
-    kind: str                       # "content", "thought", "name", "argument" or "description"
+    kind: str                       # "content", "thought", "name", "key", "argument" or "description"
     call: int = -1                  # which of the message's calls a name or an argument is of
     is_question: bool = False       # the content of a user message
 
 
-def _marked(messages: list[dict], declarations: list[dict] | None
+def _marked(messages: list[dict], declarations: list[dict] | None, markers: _Markers
             ) -> tuple[list[dict], list[dict] | None, dict[str, _Value]]:
     """The messages and the declarations with a marker in place of each text of the caller's own, and what each marker stands for."""
     values: dict[str, _Value] = {}
 
     def mark(text: str, index: int, kind: str, call: int = -1) -> str:
-        marker = f"QQ{len(values)}MQQ"
+        marker = markers.marker(len(values))
         values[marker] = _Value(text, index, kind, call, is_question=(
             kind == "content" and index >= 0 and messages[index].get("role") == "user"))
         return marker
@@ -137,7 +164,9 @@ def _marked(messages: list[dict], declarations: list[dict] | None
         if isinstance(value, str):
             return mark(value, index, "argument", call)
         if isinstance(value, dict):
-            return {key: mark_arguments(item, index, call) for key, item in value.items()}
+            # Numbered in the names' sorted order: a template that sorts them sorts the markers alike.
+            named = {key: mark(key, index, "key", call) for key in sorted(value)}
+            return {named[key]: mark_arguments(item, index, call) for key, item in value.items()}
         if isinstance(value, (list, tuple)):
             return [mark_arguments(item, index, call) for item in value]
         return value
@@ -160,6 +189,8 @@ def _marked(messages: list[dict], declarations: list[dict] | None
             copy["content"] = mark(content, index, "content")
         if message.get("reasoning_content"):
             copy["reasoning_content"] = mark(message["reasoning_content"], index, "thought")
+        if role == "tool" and isinstance(message.get("name"), str) and message["name"]:
+            copy["name"] = mark(message["name"], index, "name")
         if message.get("tool_calls"):
             copy["tool_calls"] = [
                 {**call, "function": {
@@ -171,9 +202,10 @@ def _marked(messages: list[dict], declarations: list[dict] | None
 
 
 def _placed_with_shared_markers(render, rendered: str, messages: list[dict],
-                                declarations: list[dict] | None, written) -> SplitRender | None:
-    """:func:`split_render`'s split, equal texts of one kind and role marked alike, each text written once placed in the order of its values; ``None`` where no texts are equal or it does not match."""
-    marked_messages, marked_declarations, values = _marked(messages, declarations)
+                                declarations: list[dict] | None, written,
+                                markers: _Markers) -> SplitRender | None:
+    """:func:`split_render`'s split, equal texts of one kind and role marked alike; ``None`` where none are or it does not match."""
+    marked_messages, marked_declarations, values = _marked(messages, declarations, markers)
     groups: dict[tuple, list[str]] = {}
     for marker, value in values.items():
         role = messages[value.message]["role"] if value.message >= 0 else None
@@ -184,7 +216,7 @@ def _placed_with_shared_markers(render, rendered: str, messages: list[dict],
 
     def shared(item):
         if isinstance(item, str):
-            return _MARKER.sub(lambda found: first[found.group(1)], item)
+            return markers.pattern.sub(lambda found: first[found.group(1)], item)
         if isinstance(item, dict):
             return {key: shared(inner) for key, inner in item.items()}
         if isinstance(item, list):
@@ -193,7 +225,7 @@ def _placed_with_shared_markers(render, rendered: str, messages: list[dict],
     marked = render(shared(marked_messages), shared(marked_declarations))
     if marked is None:
         return None
-    parts = _MARKER.split(marked)
+    parts = markers.pattern.split(marked)
     written_markers = parts[1::2]
     if any(written_markers.count(markers[0]) != len(markers) for markers in groups.values()
            if len(markers) > 1):
@@ -210,9 +242,9 @@ def _placed_with_shared_markers(render, rendered: str, messages: list[dict],
 
 
 def _placed(rendered: str, marked: str, values: dict[str, _Value], n_messages: int,
-            written) -> SplitRender | None:
+            written, markers: _Markers) -> SplitRender | None:
     """Where each marker's text sits in ``rendered``; ``None`` where it is not the marked render with the texts in place."""
-    placed = _walk(rendered, _MARKER.split(marked), values, written)
+    placed = _walk(rendered, markers.pattern.split(marked), values, written)
     if placed is None:
         return None
     return _split_of(rendered, placed, list(values.values()), n_messages)
@@ -234,7 +266,7 @@ def _split_of(rendered: str, placed: tuple, values: list[_Value], n_messages: in
         if value.kind == "content":
             contents[value.message] = span
         elif value.call == last_call[value.message] >= 0:
-            if value.kind == "argument":
+            if value.kind in ("key", "argument"):
                 argument_ends[value.message] = max(argument_ends.get(value.message, 0), span[1])
             else:
                 name_ends.setdefault(value.message, span[1])

@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Callable, Literal
 
 from .errors import ArgumentTypeError, InvalidArgumentError
+from .loop_variant import LoopVariant
 
 __all__ = ["ToolCall", "ToolCallStatus", "ToolSpec"]
 
@@ -47,16 +48,27 @@ def ensure_readable(text: str, field: str, where: str) -> None:
             f"which is no character and no model can read; give it as valid Unicode text")
 
 
+def _levels(value):
+    """The items of ``value``, level by level, each list and object once a level, its keys and items the next.
+
+    At most :data:`MAX_ARGUMENT_DEPTH` levels below the first.
+    """
+    level, depth = [value], 0
+    levels_variant = LoopVariant("walking a value level by level")
+    while level and depth <= MAX_ARGUMENT_DEPTH:
+        levels_variant.passes(MAX_ARGUMENT_DEPTH + 1 - depth)
+        yield level
+        # A part several others share is walked once a level, so the walk stays as long as the value.
+        containers = {id(item): item for item in level if isinstance(item, (dict, list))}
+        level = [child for item in containers.values()
+                 for child in ([*item, *item.values()] if isinstance(item, dict) else item)]
+        depth += 1
+
+
 def nesting_depth(value) -> int:
-    """How many levels of lists and objects ``value`` nests, counted without recursion; past :data:`MAX_ARGUMENT_DEPTH` it stops counting."""
-    deepest, pending = 0, [(value, 0)]
-    while pending and deepest <= MAX_ARGUMENT_DEPTH:
-        item, depth = pending.pop()
-        if isinstance(item, (dict, list)):
-            deepest = max(deepest, depth + 1)
-            pending += [(child, depth + 1) for child in
-                        (item.values() if isinstance(item, dict) else item)]
-    return deepest
+    """How many levels of lists and objects ``value`` nests; past :data:`MAX_ARGUMENT_DEPTH` it stops counting."""
+    return sum(1 for level in _levels(value)
+               if any(isinstance(item, (dict, list)) for item in level))
 
 
 def json_value_fault(value) -> str | None:
@@ -68,28 +80,23 @@ def json_value_fault(value) -> str | None:
     """
     if nesting_depth(value) > MAX_ARGUMENT_DEPTH:
         return f"it nests deeper than {MAX_ARGUMENT_DEPTH} levels"
-    pending = [value]
-    while pending:
-        item = pending.pop()
+    for item in (item for level in _levels(value) for item in level):
         if isinstance(item, dict):
             for key in item:
                 if not isinstance(key, str):
                     return f"it holds the key {key!r}, which is no text"
-            pending += list(item) + list(item.values())
-        elif isinstance(item, list):
-            pending += item
         elif isinstance(item, str):
             if lone_surrogate_at(item) is not None:
                 return f"the text {item!r} holds a lone surrogate"
         elif isinstance(item, float) and not math.isfinite(item):
             return f"it holds {item!r}, which JSON cannot write"
-        elif item is not None and not isinstance(item, (bool, int, float)):
+        elif item is not None and not isinstance(item, (bool, int, float, list)):
             return f"it holds {item!r}, which is no JSON value"
     return None
 
 
 ToolCallStatus = Literal["complete", "unreadable", "unfinished", "result_dropped"]
-"""Whether a call the model wrote was read whole, was not readable, was cut short by the reply cap or a cancel, or ran with its result left out for want of room."""
+"""Whether a call the model wrote was read whole, was not readable, was not run (see the tool-calling guide for when), or ran with its result left out for want of room."""
 
 
 @dataclass(frozen=True)

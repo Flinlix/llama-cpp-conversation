@@ -152,6 +152,7 @@ class AnswerGuard:
     min_answer_tokens: int | None = None
     thought_tags: tuple[str, ...] = ()
     thought_closing: tuple[int, ...] = ()
+    thought_opening: tuple[int, ...] = ()
     answer_room_tokens: int | None = None
     max_thought_tokens: int | None = None
 
@@ -162,6 +163,16 @@ class AnswerGuard:
             return None
         kept = min(self.answer_room_tokens, max_generated_tokens // 2) + len(self.thought_closing)
         return max(0, max_generated_tokens - kept)
+
+    def withheld_opening(self, max_generated_tokens: int, starts_in_thought: bool) -> tuple[int, ...]:
+        """The tokens a generation of at most ``max_generated_tokens`` may not draw, so that a thought leaves its answer a token.
+
+        That is a single-token opening, where the room is too small for it, its closing and an answer token.
+        """
+        if starts_in_thought or len(self.thought_opening) != 1 or self.answer_room_tokens is None \
+                or max_generated_tokens > len(self.thought_opening) + len(self.thought_closing):
+            return ()
+        return self.thought_opening
 
 
 def generate(
@@ -203,7 +214,9 @@ def generate(
     Yields:
         Visible reply text deltas; their concatenation equals ``out.text``.
     """
-    draws = _Draws(context, sampling, boundary.withheld_tokens, guard.end_tokens)
+    withheld = boundary.withheld_tokens + (guard.withheld_opening(
+        max_generated_tokens, boundary.starts_in_thought) if guard.thought_opening else ())
+    draws = _Draws(context, sampling, withheld, guard.end_tokens)
     try:
         yield from _sample_into(
             context, draws, start_pos, max_generated_tokens, out, cancel, ends_turn, boundary,

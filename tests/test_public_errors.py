@@ -388,7 +388,7 @@ def test_a_begin_that_fails_before_it_starts_leaves_the_fault_the_cache_check_fo
 
     def failing():
         raise RuntimeError("the cache could not be brought up")
-    monkeypatch.setattr(memory, "repair", failing)
+    monkeypatch.setattr(memory, "forget_undecoded", failing)     # the first step of a begin
     with pytest.raises(Exception, match="could not be brought up"):
         wrapper.begin(opened("s"))
     monkeypatch.undo()

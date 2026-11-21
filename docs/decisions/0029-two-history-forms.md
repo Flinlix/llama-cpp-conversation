@@ -25,8 +25,9 @@ template writes them back exactly.
   refused, naming where they stand. Whatever `begin` takes `conversation()`
   gives back unchanged, but for the arguments' spelling (compact JSON in their
   own order) and an empty reply's text.
-- The checks are in one place (`messages.as_messages`): a result answers the
-  oldest call still owed since the newest question, by its id or with none; a
+- The checks are in one place (`history_forms.read_messages`): a result
+  answers the oldest call still owed since the newest question, by its id,
+  which it must carry; a
   result out of order or naming another function, and a reply between a call
   and its result, are refused. A call whose arguments are no JSON object is
   unreadable and left out with its result.
@@ -45,6 +46,11 @@ template writes them back exactly.
 - `conversation()` holds everything `begin` takes (`messages`, `tools`,
   `reasoning`, `reasoning_level`, `generated_turns`), so
   `begin(**chat.conversation())` gives the same conversation.
+- A message given with a thought that differs from the one its generated turn
+  was given with no longer matches that turn: the edit is taken, and the turn
+  is written as the template writes it. A message given without a thought
+  still matches, so that a caller that drops thoughts keeps the turns as
+  generated (decided on 2026-11-21).
 
 ## Consequences
 

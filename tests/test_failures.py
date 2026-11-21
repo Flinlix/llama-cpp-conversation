@@ -104,6 +104,15 @@ class _Flaky(FakeContext):
             yield token
 
 
+class _FlakyTokenizer(_Flaky):
+    """A flaky context whose tokenizer fails too, at its turn among the operations."""
+
+    def tokenize(self, text, add_special=False, parse_special=True):
+        if self._fails():
+            raise EngineError("the tokenizer failed")
+        return super().tokenize(text, add_special, parse_special)
+
+
 def _flaky(**kw):
     fake = _Flaky(PLAIN, **kw)
     return ChatWrapper(Config(context_size=500, evict_above_fraction=1.0), context=fake), fake
@@ -271,16 +280,17 @@ def test_nothing_an_action_failing_at_any_point_leaves_blocks_a_question(cache, 
             w.close()
 
 
+@pytest.mark.parametrize("flaky", [_Flaky, _FlakyTokenizer], ids=["the cache", "the tokenizer too"])
 @pytest.mark.parametrize("action", sorted(_ACTIONS))
 @pytest.mark.parametrize("cache", sorted(_CACHES))
-def test_an_action_failing_at_any_point_leaves_everything_as_it_was_and_usable(cache, action):
+def test_an_action_failing_at_any_point_leaves_everything_as_it_was_and_usable(cache, action, flaky):
     """A reply keeps what it produced before the failure and nothing else; any other action changes nothing."""
     prepare, act, calls = _ACTIONS[action]
     for refuses_two_user_turns, template, reasons in (
             (False, TOOLS, False), (True, TOOLS_REFUSING_TWO_USER_TURNS, False),
             (False, REASONING, True)):
         def prepared(template=template, reasons=reasons):
-            fake = _Flaky(template, gen_tokens=5, gen_text="Gern.", **_CACHES[cache])
+            fake = flaky(template, gen_tokens=5, gen_text="Gern.", **_CACHES[cache])
             fake.reasons = reasons
             w = ChatWrapper(Config(context_size=160, evict_above_fraction=0.6,
                                    min_reply_tokens=20), context=fake)
@@ -299,7 +309,9 @@ def test_an_action_failing_at_any_point_leaves_everything_as_it_was_and_usable(c
             try:
                 act(w, fake, shown)
             except RuntimeError:
-                assert fake.operations == at + 1, "the cache was used again after it failed"
+                # A failed tokenizer may be asked again, to put the conversation back.
+                assert flaky is _FlakyTokenizer or fake.operations == at + 1, \
+                    "the cache was used again after it failed"
                 if calls is None:
                     assert _state(w) == before, (refuses_two_user_turns, at)
                 else:

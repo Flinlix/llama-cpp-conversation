@@ -28,6 +28,9 @@ does.
 - A template that writes the rest otherwise only around turns that called
   tools drops this far only where the conversation holds one.
 - The fraction is a constant, not a setting. It must lie in (0, 1].
+- At load, a conversation of 12 exchanges must still begin as one of 2 does,
+  so that a template that writes only the newest messages is refused: every
+  reply would decode its whole render again (found by review on 2026-11-21).
 
 ## Consequences
 

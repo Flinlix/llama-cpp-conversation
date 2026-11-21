@@ -20,11 +20,11 @@ from .config import UNQUANTIZED_KV_CACHE_TYPE, Config, DrawnSampling, model_file
 from .errors import EngineError
 
 SEQ = 0  # the one sequence id, there being one conversation
-# The GGUF keys that state the sampling a model recommends, by Sampling's names.
 # The GGUF entries that describe the weights, for the model's fingerprint.
 _FINGERPRINT_KEYS = ("general.architecture", "general.file_type", "general.parameter_count",
                      "tokenizer.ggml.model", "tokenizer.ggml.pre")
 
+# The GGUF keys that state the sampling a model recommends, by Sampling's names.
 _GGUF_SAMPLING_KEYS = {"temperature": "general.sampling.temp", "top_k": "general.sampling.top_k",
                        "top_p": "general.sampling.top_p", "min_p": "general.sampling.min_p",
                        "repetition_penalty": "general.sampling.penalty_repeat",
@@ -62,6 +62,10 @@ class KVContext:
     """
 
     _window_tokens = 0          # the window a cut checks the cache still holds, else 0
+    # The newest token decoded and its position, and whether a shift waits for the next decode,
+    # which applies it: a state saved before then holds the keys unshifted.
+    _newest: tuple[int, int] | None = None
+    _shift_pending = False
 
     def __init__(
         self, config: Config,
@@ -204,9 +208,17 @@ class KVContext:
 
     def reset(self) -> None:
         self._backend.kv_clear(self._engine_context)
+        self._newest, self._shift_pending = None, False
 
     def prefill(self, token_ids: list[int], start_pos: int, want_logits: bool) -> None:
         self._backend.decode(self._engine_context, token_ids, start_pos, SEQ, want_logits, self._max_batch_tokens)
+        self._decoded(token_ids, start_pos)
+
+    def _decoded(self, token_ids: list[int], start_pos: int) -> None:
+        """Note a decode, which applied any shift that waited."""
+        if token_ids:
+            self._newest = (token_ids[-1], start_pos + len(token_ids) - 1)
+            self._shift_pending = False
 
     def _warm_up(self) -> None:
         """Decode a full micro-batch where layers run on a GPU, then two tokens and a single one.
@@ -236,13 +248,29 @@ class KVContext:
             raise EngineError(f"the cache refused to remove tokens {start} to {end}; the next "
                               "action decodes the conversation again")
         self._backend.kv_seq_add(self._engine_context, SEQ, end, -1, start - end)
+        self._shift_pending = True
+        if self._newest is not None:
+            token, at = self._newest
+            self._newest = (token, at - (end - start)) if at >= end else None
 
     def save_state(self):
         """What a cache that cannot shift needs to be put back to where it rests now."""
         return self._backend.save_state(self._engine_context, SEQ)
 
     def save_whole_state(self):
-        """Everything the cache holds, for :meth:`restore_whole_state`, as a buffer whose length is its size in bytes."""
+        """Everything the cache holds, for :meth:`restore_whole_state`, as a buffer whose length is its size in bytes.
+
+        Raises:
+            RuntimeError: If the engine saves nothing, or a shift waits that no decode can apply.
+        """
+        if self._shift_pending:
+            # The newest token decoded again applies the shift, so that the keys saved are shifted.
+            if self._newest is None:
+                raise EngineError("a shift of the cache waits for a decode, and the token to "
+                                  "decode for it is not known; the state is not saved")
+            token, at = self._newest
+            self.remove_from(at)
+            self.prefill([token], at, want_logits=False)
         return self._backend.save_whole_state(self._engine_context, SEQ)
 
     def restore_whole_state(self, state) -> None:
@@ -251,7 +279,7 @@ class KVContext:
         Raises:
             RuntimeError: If the cache refuses the state.
         """
-        self._backend.kv_clear(self._engine_context)
+        self.reset()
         self._backend.restore_whole_state(self._engine_context, SEQ, state)
 
     def restore_state(self, state, pos: int) -> None:
@@ -261,6 +289,7 @@ class KVContext:
             RuntimeError: If the cache refuses the state or the cut after it.
         """
         self._backend.restore_state(self._engine_context, SEQ, state)
+        self._newest, self._shift_pending = None, False
         held = self.remove_from(pos)
         assert held is None, "a state saved at a position holds the window the next token there attends over"
 
@@ -270,6 +299,8 @@ class KVContext:
         Raises:
             RuntimeError: If the cache refuses a partial removal.
         """
+        if self._newest is not None and self._newest[1] >= pos:
+            self._newest = None
         if not self._backend.kv_seq_rm(self._engine_context, SEQ, pos, -1):
             raise EngineError(f"the cache refused to remove its tokens from {pos} on; the next "
                               "action decodes the conversation again")
@@ -295,6 +326,7 @@ class KVContext:
     def decode_generated(self, token_ids: list[int], start_pos: int) -> None:
         self._backend.decode(self._engine_context, token_ids, start_pos, SEQ, True,
                              self._max_batch_tokens)
+        self._decoded(token_ids, start_pos)
 
     def ends_generation(self, token: int) -> bool:
         return self._backend.is_eog(self._vocab, token)

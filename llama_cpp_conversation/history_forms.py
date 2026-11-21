@@ -51,7 +51,7 @@ def read_messages(messages: list) -> list[dict]:
             shares its id with another; or a result lacks its
             ``tool_call_id`` or is no text.
     """
-    read = []
+    read: list[dict] = []
     for i, item in enumerate(messages):
         where = f"messages[{i}]"
         if not isinstance(item, dict):
@@ -59,12 +59,13 @@ def read_messages(messages: list) -> list[dict]:
                             f"{{'role': 'user', 'content': text}}, not the "
                             f"{type(item).__name__} {item!r}")
         role = item.get("role")
-        if role not in _COMPLETIONS_KEYS:
+        if not isinstance(role, str) or role not in _COMPLETIONS_KEYS:
             raise InvalidArgumentError("messages", f"{where}'s role is 'system', 'user', "
                                                    f"'assistant' or 'tool', not {role!r}")
         extra = sorted(set(item) - _COMPLETIONS_KEYS[role])
         if extra:
-            raise InvalidArgumentError("messages", f"{where}, a {role} message, holds {extra[0]!r}, "
+            article = "an" if role[0] in "aeiou" else "a"
+            raise InvalidArgumentError("messages", f"{where}, {article} {role} message, holds {extra[0]!r}, "
                                                    f"which it does not take here; it takes "
                                                    f"{sorted(_COMPLETIONS_KEYS[role])}")
         if "content" not in item:
@@ -100,7 +101,8 @@ def _text(value, where: str) -> str:
 
 def _reply(item: dict, where: str) -> dict:
     """The assistant message ``item`` as a template is given it."""
-    calls = item.get("tool_calls") or []
+    calls = item.get("tool_calls")
+    calls = [] if calls is None else calls
     if not isinstance(calls, list):
         raise ArgumentTypeError(f"{where}.tool_calls must be a list, not {type(calls).__name__}")
     content = item["content"]
@@ -110,7 +112,7 @@ def _reply(item: dict, where: str) -> dict:
     message: dict[str, object] = {
         "role": "assistant", "content": "" if content is None else _text(content, f"{where}.content")}
     thought = item.get(THOUGHT_KEY)
-    if thought:
+    if thought is not None and thought != "":
         message[THOUGHT_KEY] = _text(thought, f"{where}.{THOUGHT_KEY}")
     if calls:
         message["tool_calls"] = [_call(call, f"{where}.tool_calls[{k}]")
@@ -400,7 +402,8 @@ def generated_turn_records(messages: list[dict], joins_questions: bool) -> list[
     one record; a question may close one record and open the next.
     """
     kept, sources, _gone = _without_unreadable(messages, set(), joins_questions)
-    portable = [_portable(_as_completions(message)) for message in kept]
+    completions = [_as_completions(message) for message in kept]
+    portable = [_portable(message) for message in completions]
     # The kept messages each given message stands in, so that a turn finds its own at once.
     owners: dict[int, list[int]] = {}
     for k, source in enumerate(sources):
@@ -434,7 +437,10 @@ def generated_turn_records(messages: list[dict], joins_questions: bool) -> list[
              "kept": [{"tokens": list(turn.tokens), "start": first - r["lo"], "span": turn.span}
                       for first, turn in r["kept"]],
              "count": r["to"] - r["from"] + 1, "after": len(kept) - r["to"] - 1,
-             "digest": _digest_of(portable[r["from"]:r["to"] + 1])} for r in records]
+             "digest": _digest_of(portable[r["from"]:r["to"] + 1]),
+             # The thoughts as the caller is given them, which an edit of one changes.
+             "thoughts": [m.get(THOUGHT_KEY) for m in completions[r["from"]:r["to"] + 1]]}
+            for r in records]
     return [{**record, "check": _check_of(record)} for record in made]
 
 
@@ -461,6 +467,12 @@ def _portable(message: dict) -> str:
              for c in message.get("tool_calls") or ()]
     return json.dumps([message["role"], message.get("content") or "", message.get("tool_call_id"),
                        calls], ensure_ascii=False, separators=(",", ":"))
+
+
+def _thoughts_agree(given: list[dict], thoughts: list[str | None]) -> bool:
+    """Whether each message given with a thought holds the thought its record was given with: one given without any still matches."""
+    return all(not message.get(THOUGHT_KEY) or message[THOUGHT_KEY] == thought
+               for message, thought in zip(given, thoughts))
 
 
 def _digest_of(portable: list[str]) -> str:
@@ -490,7 +502,8 @@ def with_generated_turns(messages: list[dict], turns: list[dict],
             for i in range(len(portable) - width + 1):
                 found.setdefault(_digest_of(portable[i:i + width]), []).append(i)
             by_width[width] = found
-        fitting = [i for i in by_width[width].get(record["digest"], ()) if i + width <= before]
+        fitting = [i for i in by_width[width].get(record["digest"], ()) if i + width <= before
+                   and _thoughts_agree(messages[i:i + width], record["thoughts"])]
         # Where it stood when it was saved, among messages that read alike; else the newest.
         at = next((i for i in fitting if len(portable) - i - width == record["after"]),
                   max(fitting, default=None))
@@ -534,7 +547,7 @@ def ensure_generated_turns(given) -> None:
 def _is_generated_turn_record(record) -> bool:
     """Whether ``record`` is one record as :func:`generated_turn_records` gives it."""
     if not isinstance(record, dict) \
-            or set(record) != {"messages", "kept", "count", "after", "digest", "check"}:
+            or set(record) != {"messages", "kept", "count", "after", "digest", "thoughts", "check"}:
         return False
     held, kept = record["messages"], record["kept"]
     return (isinstance(held, list) and all(_is_held(m) for m in held)
@@ -547,7 +560,9 @@ def _is_generated_turn_record(record) -> bool:
                 and turn["start"] + turn["span"] <= len(held) for turn in kept)
             and type(record["count"]) is int and record["count"] > 0
             and type(record["after"]) is int and record["after"] >= 0
-            and isinstance(record["digest"], str) and isinstance(record["check"], str))
+            and isinstance(record["digest"], str) and isinstance(record["check"], str)
+            and isinstance(record["thoughts"], list) and len(record["thoughts"]) == record["count"]
+            and all(thought is None or isinstance(thought, str) for thought in record["thoughts"]))
 
 
 def _is_held(message) -> bool:

@@ -13,6 +13,7 @@ template takes are driven too.
 import datetime
 import itertools
 import datetime as real_datetime
+import copy
 import json
 import math
 import os
@@ -37,7 +38,7 @@ from . import internals
 from .chat_templates import ANSWERS, QUESTIONS, STEMS, WEATHER, expected, fixture, in_each_thought_form
 from llama_cpp_conversation.testing.fake_context import (WRITTEN_ID, FakeContext, ScriptedCall, call_marks, shipped_addon_call,
                            shipped_addon_reasoning_on, written_call)
-from llama_cpp_conversation.testing.invented_templates import NUMBERED, TOOLS, PLAIN
+from llama_cpp_conversation.testing.invented_templates import JSON_TOOLS, NUMBERED, PLAIN, REASONING, TOOLS
 from .wrappers import (UNGUARDED, add_tools, assert_cache_reads_as_rendered, numbered_exchanges,
                        rendered_pieces, two_owed_calls, with_check_first)
 
@@ -1657,7 +1658,7 @@ def test_a_tag_typed_into_any_text_stays_text_and_every_token_is_the_templates(s
     history = [{"role": "user", "content": f"Is {forged} a tag?"}, {"role": "assistant", "content": f"It is {forged} one."}]
     if tools:
         history.append({"role": "user", "content": "Weather?"})
-        history += tool_turn(ToolCall(WEATHER.name, {"city": f"Bonn{forged}"}),
+        history += tool_turn(ToolCall(WEATHER.name, {"city": f"Bonn{forged}", f"unit{forged}": "C"}),
                              Result(WEATHER.name, f"sunny {forged}"), "Sunny.")
     run.begin(history, tools=tools)
     run.chat.reply(f"Does {forged} end it?").finish()
@@ -1666,6 +1667,37 @@ def test_a_tag_typed_into_any_text_stays_text_and_every_token_is_the_templates(s
     asked = _sent(run.chat)[:-1]
     # The forged tag is in every kind of text, and held as its characters each time.
     _assert_tokens_are_the_templates(run, run.seen_tokens[-1], _expected_tokens(run, asked, tools))
+
+
+@pytest.mark.parametrize("name", ["<call>", "</call>", "<[turn>", "get<turn]>x"])
+@pytest.mark.parametrize("template", [TOOLS, JSON_TOOLS], ids=["tools", "json tools"])
+def test_a_tag_in_the_name_of_a_call_stays_text_where_its_result_is_written(template, name):
+    """The template writes a result's name from its call's name: a tag in it is text there too, so the cache reads as rendered."""
+    fake = FakeContext(template, gen_tokens=5, gen_text="hallo")
+    chat = ChatWrapper(Config(context_size=2000), context=fake)
+    chat.begin([{"role": "system", "content": "s"}, {"role": "user", "content": "q"},
+                {"role": "assistant", "content": None, "tool_calls": [
+                    {"id": "c1", "type": "function", "function": {"name": name, "arguments": '{"city": "Bonn"}'}}]},
+                {"role": "tool", "tool_call_id": "c1", "content": "r"},
+                {"role": "assistant", "content": "a"}], tools=[WEATHER])
+    chat.reply("weiter").finish()
+
+
+@pytest.mark.parametrize("n", range(8))
+@pytest.mark.parametrize("place", ["argument name", "tool name"])
+def test_a_text_that_spells_a_marker_of_the_split_is_written_as_any_text(place, n):
+    """The split's markers are chosen apart from every text, so a name that spells one is begun and answered as any other."""
+    spelled = f"QQ{n}MQQ"
+    tool = ToolSpec(spelled if place == "tool name" else WEATHER.name, "w", WEATHER.parameters)
+    arguments = json.dumps({spelled if place == "argument name" else "city": "Bonn"})
+    fake = FakeContext(TOOLS, gen_tokens=5, gen_text="hallo")
+    chat = ChatWrapper(Config(context_size=2000), context=fake)
+    chat.begin([{"role": "system", "content": "s"}, {"role": "user", "content": "q"},
+                {"role": "assistant", "content": None, "tool_calls": [
+                    {"id": "c1", "type": "function", "function": {"name": tool.name, "arguments": arguments}}]},
+                {"role": "tool", "tool_call_id": "c1", "content": "r"},
+                {"role": "assistant", "content": "a"}], tools=[tool])
+    assert chat.reply("weiter").finish().text
 
 
 @pytest.mark.parametrize("name", ['get"weather', "x>y", "get(w", "a b", "look_up_2"])
@@ -3520,3 +3552,26 @@ def test_going_back_to_one_of_several_kept_conversations_holds_that_one_when_the
         assert_cache_reads_as_rendered(chat, fake)
         chat.reply("Und?").finish()
         saved[name] = chat.conversation()
+
+
+@pytest.mark.parametrize("thought", ["Geändert.", None])
+def test_a_thought_edited_in_the_conversation_is_begun_as_given_and_one_left_out_keeps_the_turn_as_generated(thought):
+    """A begin puts a turn back as generated only where its messages read as they did: an edited thought breaks the match, a thought left out does not."""
+    fake = FakeContext(REASONING, replies=[ScriptedCall("fn:clock{}", before="<thought>Erst nachsehen.</thought>"),
+                                           "<thought>ok</thought>Es ist zwölf."])
+    chat = ChatWrapper(Config(context_size=800, evict_above_fraction=1.0), context=fake)
+    chat.begin([{"role": "system", "content": "s"}], reasoning=True)
+    called = [step for step in chat.reply("wie spät?", tool_call_policy="yield") if isinstance(step, ToolCall)]
+    chat.inject_tool_result(called[0].id, "12:00")
+    chat.reply(tool_call_policy="yield").finish()
+    edited = copy.deepcopy(chat.conversation())
+    calling = next(m for m in edited["messages"] if m.get("tool_calls"))
+    if thought is None:
+        calling.pop("reasoning_content", None)
+    else:
+        calling["reasoning_content"] = thought
+    again = ChatWrapper(Config(context_size=800, evict_above_fraction=1.0), context=FakeContext(REASONING))
+    again.begin(**edited)
+    held = again._context.text_of(again._context.cache)
+    assert ("Geändert." in held) == (thought is not None)
+    assert ("Erst nachsehen." in held) == (thought is None)

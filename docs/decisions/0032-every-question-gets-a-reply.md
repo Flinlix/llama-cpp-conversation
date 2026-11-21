@@ -50,6 +50,11 @@ Python errors, replies that ended empty.
   under the default policy, since none could be answered.
 - A `begin` after `reply()` and before the reply is read makes reading it an
   `OutOfOrderError`.
+- Where a reply's cap leaves no room for a thought's opening, its closing and
+  one token of answer, a single-token opening is not drawn, so that the reply
+  answers without thinking (found by review on 2026-11-21: a cap of 2 gave
+  only the two marks). A cap of 1 leaves no room for both a thought and an
+  answer.
 
 ## Consequences
 

@@ -1003,7 +1003,8 @@ class ChatWrapper:
         try:
             self._holder = threading.current_thread()
             if settles:
-                self._settle_due_work(cancel, question, reply_tokens)
+                # As where the action came while that work ran: it stops after its first part.
+                self._settle_due_work(_AN_ACTION_WAITS, question, reply_tokens)
             yield True
         finally:
             self._holder = None
@@ -1187,6 +1188,9 @@ _AFTER_REPLY_WAIT_S = 1.0
 # How long the work after a reply waits before it starts, so that the reader of the stream
 # takes in its end without sharing the interpreter with it; at least 0.
 _AFTER_REPLY_PAUSE_S = 0.005
+# Set for good: the work a reply left, done before an action, gives way to it.
+_AN_ACTION_WAITS = threading.Event()
+_AN_ACTION_WAITS.set()
 # The least time between two looks for a reply that nobody reads.
 _UNREAD_WATCH_MIN_S = 0.05
 # How often a reply waiting for the wrapper looks at its cancel.

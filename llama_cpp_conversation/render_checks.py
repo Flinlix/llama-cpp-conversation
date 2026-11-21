@@ -109,6 +109,10 @@ def rest_stays_after_a_drop(render: Render, system: list[dict],
     return whole.endswith(dropped[shared:])
 
 
+# Enough exchanges that a template writing only the newest messages leaves the oldest out.
+_PROBED_EXCHANGES = 12
+
+
 def ensure_history_stays_written(render: Render, system: list[dict]) -> None:
     """Refuse a template that writes an older exchange otherwise once another follows.
 
@@ -117,7 +121,7 @@ def ensure_history_stays_written(render: Render, system: list[dict]) -> None:
             exchange, or refuses the probe that shows whether it does.
     """
     exchanges = [[{"role": "user", "content": f"QQASK{n}QQ"},
-                  {"role": "assistant", "content": f"QQREPLY{n}QQ"}] for n in range(3)]
+                  {"role": "assistant", "content": f"QQREPLY{n}QQ"}] for n in range(_PROBED_EXCHANGES)]
     two = render(system + exchanges[0] + exchanges[1], False)
     three = render(system + exchanges[0] + exchanges[1] + exchanges[2], False)
     if two is None or three is None or "QQREPLY0QQ" not in two:
@@ -128,6 +132,10 @@ def ensure_history_stays_written(render: Render, system: list[dict]) -> None:
     if two[:kept] != three[:kept]:
         raise TemplateRefusedError(None, "this model's template writes an older exchange otherwise once "
                          "another follows, which a rolling memory cannot keep")
+    many = render(system + [message for exchange in exchanges for message in exchange], False)
+    if many is not None and many[:kept] != two[:kept]:
+        raise TemplateRefusedError(None, "this model's template leaves older exchanges out once there "
+                         "are many, so every reply would decode the whole conversation again")
 
 
 def tool_turns_stay_written(render: Render, system: list[dict], tool: str, thought: bool) -> bool:

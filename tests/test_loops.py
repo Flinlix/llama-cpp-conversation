@@ -59,17 +59,31 @@ def _ends_by_construction(loop: ast.While) -> bool:
     if len(body) == 1 and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Yield):
         return True
     tested = loop.test.values[0] if isinstance(loop.test, ast.BoolOp) else loop.test
-    return isinstance(tested, ast.Name) and any(
-        isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "pop" and isinstance(node.func.value, ast.Name)
-        and node.func.value.id == tested.id for stmt in body for node in ast.walk(stmt))
+    return isinstance(tested, ast.Name) and _calls_on(body, tested.id, ("pop",)) \
+        and not _grows(body, tested.id)
+
+
+def _calls_on(body, name: str, methods: tuple[str, ...]) -> bool:
+    """Whether ``body`` calls one of ``methods`` on the variable ``name``."""
+    return any(isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+               and node.func.attr in methods and isinstance(node.func.value, ast.Name)
+               and node.func.value.id == name for stmt in body for node in ast.walk(stmt))
+
+
+def _grows(body, name: str) -> bool:
+    """Whether ``body`` adds to the list ``name``: a work list it also fills need not end."""
+    return _calls_on(body, name, ("append", "extend", "insert")) or any(
+        isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name)
+        and node.target.id == name for stmt in body for node in ast.walk(stmt))
 
 
 def _passes_first(loop: ast.While) -> bool:
     """Whether the first statement of every pass of ``loop`` gives a variant its measure."""
     first = loop.body[0]
+    # A variant made afresh in the pass never sees its measure fall short of the last one.
     return isinstance(first, ast.Expr) and isinstance(first.value, ast.Call) \
-        and isinstance(first.value.func, ast.Attribute) and first.value.func.attr == "passes"
+        and isinstance(first.value.func, ast.Attribute) and first.value.func.attr == "passes" \
+        and isinstance(first.value.func.value, ast.Name)
 
 
 @pytest.mark.parametrize("where, line, loop", list(_loops()),
@@ -215,3 +229,45 @@ def test_a_loop_finding_a_tag_before_a_place_that_makes_no_progress_is_named_in_
         llama_cpp_conversation.template.shared_tags_length("<a><a>", "<a><a>x", ("<a>",))
     loop = re.match(r"(.*) made no progress", str(raised.value)).group(1)
     assert loop != "None" and len(loop.split()) >= 2
+
+
+# Each walks a value of bounded depth: arguments and declarations pass json_value_fault, which
+# refuses a value nested deeper than MAX_ARGUMENT_DEPTH, and a tool's annotations are types
+# that ToolRegistry describes only where they nest finitely.
+_SELF_CALLING = {"call_parsing.py:_typed", "call_parsing.py:_branches", "split_render.py:mark_arguments",
+                 "split_render.py:mark_descriptions", "split_render.py:shared",
+                 "tool_registry.py:_described", "tools.py:fault"}
+
+
+def _self_calling() -> set[str]:
+    """The library's functions, methods left out, that call themselves by name."""
+    found = set()
+    for path in sorted(_PACKAGE.rglob("*.py")):
+        tree = ast.parse(path.read_text())
+        methods = {id(item) for node in ast.walk(tree) if isinstance(node, ast.ClassDef)
+                   for item in node.body}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and id(node) not in methods and any(
+                    isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
+                    and call.func.id == node.name for call in ast.walk(node)):
+                found.add(f"{path.name}:{node.name}")
+    return found
+
+
+def test_every_function_that_calls_itself_walks_a_value_of_bounded_depth():
+    assert _self_calling() == _SELF_CALLING, "a function that calls itself needs a bound on its depth"
+
+
+@pytest.mark.parametrize("source, ends", [
+    ("while pending:\n    item = pending.pop()\n", True),
+    ("while pending:\n    item = pending.pop()\n    pending.append(item)\n", False),
+    ("while pending:\n    item = pending.pop()\n    pending += [item]\n", False)])
+def test_a_work_list_the_loop_also_fills_is_not_taken_to_end(source, ends):
+    assert _ends_by_construction(ast.parse(source).body[0]) is ends
+
+
+@pytest.mark.parametrize("source, passes", [
+    ("while x:\n    variant.passes(x)\n", True),
+    ("while x:\n    LoopVariant('x').passes(x)\n", False)])
+def test_a_variant_made_afresh_in_each_pass_gives_no_measure(source, passes):
+    assert _passes_first(ast.parse(source).body[0]) is passes

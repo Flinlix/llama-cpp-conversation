@@ -162,7 +162,8 @@ def _is_the_engines(word: str) -> bool:
 
 @pytest.mark.parametrize("path", _checked_files(), ids=lambda path: str(path.relative_to(_ROOT)))
 def test_a_file_names_no_model_family_or_vendor(path):
-    words = set(re.findall(r"[A-Za-z0-9_]+(?:[.\-][A-Za-z0-9_]+)*", _OWN_NAME.sub(" ", _checked_text(path))))
+    named = f"{path.relative_to(_ROOT)}\n{_checked_text(path)}"     # the file's name too
+    words = set(re.findall(r"[A-Za-z0-9_]+(?:[.\-][A-Za-z0-9_]+)*", _OWN_NAME.sub(" ", named)))
     if path in _ENGINE_FILES:
         words = {word for word in words if not _is_the_engines(word)}
     assert not sorted(word for word in words if _names_a_model(word, _names()))
