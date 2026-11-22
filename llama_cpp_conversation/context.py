@@ -30,6 +30,12 @@ _GGUF_SAMPLING_KEYS = {"temperature": "general.sampling.temp", "top_k": "general
 _WHOLE_NUMBER_FIELDS = {"top_k", "penalty_window_tokens"}
 # The penalty window a GGUF states to mean the whole context, as llama.cpp reads it.
 _WHOLE_CONTEXT_WINDOW = -1
+# The fewest likeliest tokens the device keeps for the draws.
+_LEAST_KEPT_CANDIDATES = 128
+# Every count the device keeps is a multiple of this.
+_KEPT_CANDIDATES_STEP = 64
+# The fewest withheld tokens the device's count makes room for, so that the count stays put.
+_WITHHELD_ALLOWANCE = 32
 # The micro-batch llama.cpp decodes in where none is set, the largest one a batch is run as.
 _ENGINE_MICRO_BATCH_TOKENS = 512
 # Where the system describes each processor's package and core, on Linux.
@@ -59,9 +65,12 @@ class KVContext:
     """
 
     _window_tokens = 0          # the window a cut checks the cache still holds, else 0
+    _kept_candidates = 0        # how many likeliest tokens each decode hands over, else 0 for all
+    _candidates_refused = False  # whether the engine refused to keep them, so that it is not asked again
     # The newest token decoded and its position, and whether a shift waits for the next decode,
     # which applies it: a state saved before then holds the keys unshifted.
     _newest: tuple[int, int] | None = None
+    _holds_nothing = True       # emptied, and nothing decoded or restored since
     _shift_pending = False
 
     def __init__(
@@ -74,6 +83,8 @@ class KVContext:
         self._model = self._backend.load_model(
             model_path, config.gpu_layers, progress=on_load_progress)
         self._engine_context = None
+        # The device's stage that keeps the likeliest tokens alone, freed after the context.
+        self._candidate_stage: list = [None]
         try:
             template = self._backend.metadata_value(self._model, "tokenizer.chat_template")
             kv_type = self._backend.kv_cache_type_id(config.kv_cache_type)
@@ -101,17 +112,16 @@ class KVContext:
             self._template_texts = {name: text for name, text in texts.items() if text}
             self._special_tokens: tuple[int, ...] | None = None
             self._fingerprint: str | None = None
+            self._longest_token_bytes: int | None = None
             self._model_bytes = os.path.getsize(model_path)
         except BaseException:
             # Free whatever was created before the failure.
-            if self._engine_context is not None:
-                self._backend.free_context(self._engine_context)
-            self._backend.free_model(self._model)
+            _free_engine(self._backend, self._engine_context, self._model, self._candidate_stage)
             raise
         self._closed = False
         # Frees the engine when the context is collected unclosed, and at most once.
         self._free = weakref.finalize(self, _free_engine, self._backend, self._engine_context,
-                                      self._model)
+                                      self._model, self._candidate_stage)
 
     @property
     def context_size(self) -> int:
@@ -188,9 +198,11 @@ class KVContext:
             for name in (None, TOOL_USE_TEMPLATE):
                 digest.update(f"{name}={self.chat_template_text(name)}\n".encode())
             digest.update(f"size={self._model_bytes}\n".encode())
+            longest = 1
             for piece in self._backend.vocabulary_pieces(self._vocab):
                 digest.update(len(piece).to_bytes(4, "little") + piece)
-            self._fingerprint = digest.hexdigest()
+                longest = max(longest, len(piece))
+            self._fingerprint, self._longest_token_bytes = digest.hexdigest(), longest
         return self._fingerprint
 
     def chat_template_text(self, template_name: str | None = None) -> str | None:
@@ -199,7 +211,7 @@ class KVContext:
 
     def reset(self) -> None:
         self._backend.kv_clear(self._engine_context)
-        self._newest, self._shift_pending = None, False
+        self._newest, self._shift_pending, self._holds_nothing = None, False, True
 
     def prefill(self, token_ids: list[int], start_pos: int, want_logits: bool) -> None:
         self._backend.decode(self._engine_context, token_ids, start_pos, SEQ, want_logits, self._max_batch_tokens)
@@ -209,7 +221,7 @@ class KVContext:
         """Note a decode, which applied any shift that waited."""
         if token_ids:
             self._newest = (token_ids[-1], start_pos + len(token_ids) - 1)
-            self._shift_pending = False
+            self._shift_pending, self._holds_nothing = False, False
 
     def _warm_up(self) -> None:
         """Decode a full micro-batch where layers run on a GPU, then two tokens and a single one.
@@ -276,6 +288,7 @@ class KVContext:
         """
         self.reset()
         self._backend.restore_whole_state(self._engine_context, SEQ, state)
+        self._holds_nothing = False
 
     def restore_state(self, state, pos: int) -> None:
         """Put the cache back to ``state``, saved when it held ``pos`` tokens.
@@ -284,7 +297,7 @@ class KVContext:
             RuntimeError: If the cache refuses the state or the cut after it.
         """
         self._backend.restore_state(self._engine_context, SEQ, state)
-        self._newest, self._shift_pending = None, False
+        self._newest, self._shift_pending, self._holds_nothing = None, False, False
         held = self.remove_from(pos)
         assert held is None, "a state saved at a position holds the window the next token there attends over"
 
@@ -301,15 +314,59 @@ class KVContext:
         if not self._backend.kv_seq_rm(self._engine_context, SEQ, pos, -1):
             raise EngineError(f"the cache refused to remove its tokens from {pos} on; the next "
                               "action decodes the conversation again")
-        if self._window_tokens and pos > 0:
+        if pos <= 0:
+            self._holds_nothing = True
+        elif self._window_tokens:
             # -1: the window's layers hold nothing of what was kept, which lies before their reach.
             oldest = self._backend.kv_seq_pos_min(self._engine_context, SEQ)
             if oldest < 0 or oldest > max(0, pos - self._window_tokens):
                 self._backend.kv_clear(self._engine_context)
+                self._holds_nothing = True
                 return 0
         return None
 
     # ----- the steps a generation takes ----------------------------------
+    def prepare_draws(self, sampling: DrawnSampling, withheld_count: int) -> bool:
+        """Have each decode hand over only the likeliest tokens those draws are made among, where layers run on a GPU.
+
+        Returns whether the newest decode's logits still serve the draws. See
+        docs/decisions/0061-draws-among-the-likeliest-tokens-the-device-keeps.md.
+        """
+        if not self._keeps_candidates:
+            return True
+        needed = _candidates_drawn_among(sampling, self._penalty_window(sampling),
+                                         max(withheld_count, _WITHHELD_ALLOWANCE))
+        count = (0 if needed is None else max(
+            _LEAST_KEPT_CANDIDATES, -(-needed // _KEPT_CANDIDATES_STEP) * _KEPT_CANDIDATES_STEP))
+        if count >= self._backend.vocabulary_size(self._vocab):
+            count = 0
+        kept_serve = bool(self._kept_candidates) and needed is not None \
+            and self._kept_candidates >= needed
+        if kept_serve or count == self._kept_candidates:
+            return True
+        self._keep_candidates(count)
+        if self._holds_nothing:
+            # Nothing decoded since the cache was emptied, as right after load: warmed up again,
+            # so that the engine plans its graph for the stage now rather than at the first word.
+            self._warm_up()
+        return False
+
+    @property
+    def _keeps_candidates(self) -> bool:
+        """Whether the device may keep the likeliest tokens of each decode for the draws."""
+        return not self._decode_blocks and not self._candidates_refused \
+            and self._backend.can_keep_candidates
+
+    def _keep_candidates(self, count: int) -> None:
+        """Have each decode hand over its ``count`` likeliest tokens, every token's logit for ``0``."""
+        if self._candidate_stage[0] is not None:
+            self._backend.keep_all_tokens(self._engine_context, SEQ, self._candidate_stage[0])
+            self._candidate_stage[0], self._kept_candidates = None, 0
+        if count:
+            self._candidate_stage[0] = self._backend.keep_candidates(self._engine_context, SEQ, count)
+            self._kept_candidates = count if self._candidate_stage[0] is not None else 0
+            self._candidates_refused = self._candidate_stage[0] is None
+
     def sampled_tokens(self, sampling: DrawnSampling, withheld_tokens: tuple[int, ...]):
         """Tokens drawn one at a time from a sampler chain of their own, freed when this is closed."""
         # A chain of its own: penalties count this generation's tokens only, and a seed starts over.
@@ -327,6 +384,13 @@ class KVContext:
 
     def ends_generation(self, token: int) -> bool:
         return self._backend.is_eog(self._vocab, token)
+
+    def longest_token_bytes(self) -> int:
+        """The most bytes a token of the vocabulary stands for, read with the fingerprint."""
+        if self._longest_token_bytes is None:
+            self.model_fingerprint()
+        assert self._longest_token_bytes is not None, "the fingerprint's pass reads it"
+        return self._longest_token_bytes
 
     def token_bytes(self, token: int) -> bytes:
         return self._backend.token_to_piece_bytes(self._vocab, token)
@@ -384,6 +448,10 @@ class KVContext:
         finally:
             self._backend.kv_clear(self._engine_context)
 
+    def _penalty_window(self, sampling: DrawnSampling) -> int:
+        """How many of the newest tokens the penalties count; a window longer than the context reads as one as long as it."""
+        return min(sampling.penalty_window_tokens, self.context_size)
+
     def _build_sampler(self, sampling: DrawnSampling, withheld: tuple[int, ...] = ()):
         """Assemble the sampler chain ``sampling`` asks for, in sampling order, ``withheld`` never drawn."""
         backend = self._backend
@@ -391,10 +459,8 @@ class KVContext:
         try:
             if withheld:
                 backend.add_withheld(chain, self._vocab, withheld)
-            if sampling.repetition_penalty != 1.0 \
-                    or sampling.presence_penalty or sampling.frequency_penalty:
-                # A window longer than the context reads the same tokens as one as long as it.
-                window = min(sampling.penalty_window_tokens, self.context_size)
+            if _penalizes(sampling):
+                window = self._penalty_window(sampling)
                 kept = _candidates_before_penalties(sampling, window)
                 if kept is not None and kept < backend.vocabulary_size(self._vocab):
                     backend.add_top_k(chain, kept)
@@ -419,6 +485,22 @@ class KVContext:
         except BaseException:
             backend.free_sampler(chain)
             raise
+
+
+def _penalizes(sampling: DrawnSampling) -> bool:
+    """Whether ``sampling`` changes a token's logit by what the generation drew before."""
+    return sampling.repetition_penalty != 1.0 or bool(sampling.presence_penalty) \
+        or bool(sampling.frequency_penalty)
+
+
+def _candidates_drawn_among(sampling: DrawnSampling, window: int, withheld_count: int) -> int | None:
+    """How many of the likeliest tokens every draw with ``sampling`` is made among, where it withholds at most ``withheld_count``; ``None`` for all."""
+    if _penalizes(sampling):
+        reached = _candidates_before_penalties(sampling, window)
+    else:
+        reached = 1 if sampling.temperature <= 0.0 else sampling.top_k
+        reached = reached if reached > 0 else None
+    return None if reached is None else reached + withheld_count
 
 
 def _candidates_before_penalties(sampling: DrawnSampling, window: int) -> int | None:
@@ -505,7 +587,10 @@ def _flash_attention(config: Config) -> bool | None:
     return config.flash_attention
 
 
-def _free_engine(backend: Backend, engine_context, model) -> None:
-    """Free ``engine_context``, then the ``model`` it was made from."""
-    backend.free_context(engine_context)
+def _free_engine(backend: Backend, engine_context, model, candidate_stage: list) -> None:
+    """Free ``engine_context``, then the stage it held in ``candidate_stage``, then the ``model`` it was made from."""
+    if engine_context is not None:
+        backend.free_context(engine_context)
+    if candidate_stage[0] is not None:
+        backend.free_sampler(candidate_stage[0])
     backend.free_model(model)

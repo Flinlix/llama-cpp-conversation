@@ -135,3 +135,34 @@ def test_a_conversation_switched_away_from_and_back_to_comes_back_whole(model_pa
         assert wrapper._conversation._found_fault is None, "check_cache found a fault"
     finally:
         wrapper.close()
+
+
+@pytest.mark.time_limit_s(1800)
+@pytest.mark.parametrize("model_path", _MODELS, ids=[os.path.basename(p) for p in _MODELS])
+def test_draws_among_the_candidates_the_device_keeps_are_the_draws_from_every_logit(
+        model_path, monkeypatch):
+    from llama_cpp_conversation import Sampling
+    from llama_cpp_conversation._backend import Backend
+
+    samplings = [Sampling(temperature=0.0), Sampling(seed=11),
+                 Sampling(seed=12, repetition_penalty=1.2, penalty_window_tokens=32)]
+
+    def replies() -> list[str]:
+        wrapper = ChatWrapper(Config(model_path=model_path, context_size=_CONTEXT_TOKENS,
+                                     gpu_layers=_GPU_LAYERS, max_reply_tokens=96,
+                                     compact_window_cache=_COMPACT_WINDOW_CACHE))
+        try:
+            can = wrapper.capabilities(tools=False)
+            texts = []
+            for sampling in samplings:
+                wrapper.begin([{"role": "system", "content": "Be brief."}]
+                              if can.can_take_system_prompt else [])
+                texts.append(wrapper.reply("Tell a short story about a lighthouse.",
+                                           sampling=sampling).finish().text)
+            return texts
+        finally:
+            wrapper.close()
+
+    kept = replies()
+    monkeypatch.setattr(Backend, "can_keep_candidates", property(lambda self: False))
+    assert kept == replies()

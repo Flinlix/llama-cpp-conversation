@@ -84,6 +84,12 @@ class CacheContext(ModelReader, Protocol):
     def prefill(self, token_ids: list[int], start_pos: int, want_logits: bool) -> None:
         """Decode ``token_ids`` from ``start_pos``, keeping the last one's logits for a draw where ``want_logits``."""
 
+    def prepare_draws(self, sampling: DrawnSampling, withheld_count: int) -> bool:
+        """Get ready for draws with ``sampling`` that withhold at most ``withheld_count`` tokens, at load, before a generation's request is decoded and again before it draws.
+
+        Returns whether the newest decode's logits still serve those draws. Optional: a context without it keeps them.
+        """
+
     def sampled_tokens(self, sampling: DrawnSampling,
                        withheld_tokens: tuple[int, ...]) -> Generator[int, None, None]:
         """Tokens drawn one at a time, each from the logits of the newest decode, never one of ``withheld_tokens``.
@@ -96,6 +102,12 @@ class CacheContext(ModelReader, Protocol):
 
     def token_bytes(self, token: int) -> bytes:
         """The bytes ``token`` stands for, which may hold part of a character."""
+
+    def longest_token_bytes(self) -> int:
+        """The most bytes one token of the vocabulary stands for.
+
+        Optional: without it, a tool result too long for the room is tokenized whole before it is cut.
+        """
 
     def apply_eviction(self, start: int, end: int) -> None:
         """Remove the tokens from ``start`` to just before ``end``, those after them moving down."""
@@ -135,6 +147,8 @@ def _members(protocol) -> tuple[str, ...]:
 
 MODEL_READER = _members(ModelReader)
 CACHE_CONTEXT = MODEL_READER + _members(CacheContext)
+# The members a context may leave out, the library then doing without what they offer.
+OPTIONAL_MEMBERS = ("prepare_draws", "longest_token_bytes")
 
 
 def ensure_answers(context, members: tuple[str, ...]) -> None:
@@ -144,12 +158,13 @@ def ensure_answers(context, members: tuple[str, ...]) -> None:
         TypeError: Naming every member that is missing, else every method
             that takes other arguments, with the arguments it is given.
     """
-    missing = [name for name in members if not hasattr(context, name)]
+    missing = [name for name in members
+               if not hasattr(context, name) and name not in OPTIONAL_MEMBERS]
     if missing:
         raise ArgumentTypeError(f"{type(context).__name__} does not answer {missing}, "
                         "which this library calls on a cache context")
-    other = [name for name in members if not _takes_arguments_of(getattr(CacheContext, name),
-                                                                  getattr(context, name))]
+    other = [name for name in members if hasattr(context, name)
+             and not _takes_arguments_of(getattr(CacheContext, name), getattr(context, name))]
     if other:
         given = "; ".join(f"{name}{_arguments(getattr(CacheContext, name))}" for name in other)
         raise ArgumentTypeError(f"{type(context).__name__} takes other arguments than this library "

@@ -15,7 +15,7 @@ or was given a cache context of your own.
 |------|------|------|
 | `model_path` | `None` | the GGUF file; loading refuses without one |
 | `temperature` | the model's | `<= 0` selects greedy decoding |
-| `top_k` | the model's | `<= 0` disables |
+| `top_k` | the model's | `<= 0` disables; then every token is drawn from the whole vocabulary, which takes longer per token the larger the vocabulary, and on a GPU the device no longer keeps the likeliest tokens alone for the draw |
 | `top_p` | the model's | nucleus cutoff |
 | `min_p` | the model's | drops tokens below `min_p` times the top token's probability; `0` disables |
 | `repetition_penalty` | the model's | over `penalty_window_tokens`; `1.0` disables |

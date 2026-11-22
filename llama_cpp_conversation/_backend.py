@@ -168,6 +168,9 @@ class Backend:
         self._init_logit_bias = _required_symbol("llama_sampler_init_logit_bias")
         self._sampler_sample = _required_symbol("llama_sampler_sample")
         self._sampler_free = _required_symbol("llama_sampler_free")
+        # Optional: a build without it draws from the whole vocabulary on the processor.
+        self._set_sampler: Callable[..., bool] | None = getattr(llama_cpp, "llama_set_sampler",
+                                                                 None)
 
     # ----- model / context lifecycle ------------------------------------
     def load_model(self, path: str, n_gpu_layers: int,
@@ -405,6 +408,27 @@ class Backend:
 
     def free_sampler(self, sampler) -> None:
         self._sampler_free(sampler)
+
+    @property
+    def can_keep_candidates(self) -> bool:
+        """Whether this build can keep only the likeliest tokens of each decode on the device, for :meth:`keep_candidates`."""
+        return self._set_sampler is not None
+
+    def keep_candidates(self, ctx, seq: int, count: int):
+        """Have each decode of ``seq`` hand over its ``count`` likeliest tokens alone; the stage to pass to :meth:`keep_all_tokens`, ``None`` where refused."""
+        assert self._set_sampler is not None, "asked only where the build can keep them"
+        chain = self.sampler_chain()
+        self.add_top_k(chain, count)
+        if self._set_sampler(ctx, seq, chain):
+            return chain
+        self.free_sampler(chain)
+        return None
+
+    def keep_all_tokens(self, ctx, seq: int, stage) -> None:
+        """Have each decode of ``seq`` hand over every token's logit again, freeing ``stage``."""
+        assert self._set_sampler is not None, "asked only where a stage was kept"
+        self._set_sampler(ctx, seq, None)
+        self.free_sampler(stage)
 
     # ----- KV / memory edits --------------------------------------------
     def kv_clear(self, ctx) -> None:

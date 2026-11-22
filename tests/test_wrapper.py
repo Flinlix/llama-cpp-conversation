@@ -1127,6 +1127,7 @@ _PLAIN_REPLY_CODE = {
         "CacheSync._interrupted",
         "CacheSync._pins_to_save",
         "CacheSync._reset_to_nothing",
+        "CacheSync.prepare_draws",
         "CacheSync._restore_to",
         "CacheSync._restore_to.<locals>.<lambda>",
         "CacheSync._save_pinned_state",
@@ -1209,6 +1210,7 @@ _PLAIN_REPLY_CODE = {
         "_sample_into.<locals>.decode_shown",
         "_sample_into.<locals>.ends_here",
         "generate",
+        "most_withheld",
     },
     "kept_turns.py": {
         "KeptTurns.drop_unplaceable",
@@ -1264,6 +1266,7 @@ _PLAIN_REPLY_CODE = {
         "RenderedCache._joins_questions",
         "RenderedCache._max_prompt_tokens",
         "RenderedCache._newest_exchange",
+        "RenderedCache._prepare_draws",
         "RenderedCache._publish",
         "RenderedCache._publishing",
         "RenderedCache._question_room",

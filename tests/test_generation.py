@@ -9,7 +9,9 @@ from llama_cpp_conversation.template import CallBoundary
 from llama_cpp_conversation.wrapper import ChatWrapper
 from tests.chat_messages import opened, after_system
 from llama_cpp_conversation.testing.fake_context import FakeContext
-from llama_cpp_conversation.testing.invented_templates import PLAIN, TOOLS
+from llama_cpp_conversation.errors import EngineError
+from llama_cpp_conversation.testing.invented_templates import JSON_TOOLS, PLAIN, TOOLS
+from llama_cpp_conversation.tools import ToolSpec
 from tests.wrappers import rows
 
 # Every sampling value set, as a generation is given them.
@@ -307,6 +309,51 @@ def test_where_a_decode_blocks_each_token_is_shown_before_it_is_decoded_and_deco
     assert "".join(d for d, _ in held) in fake.text_of(fake.cache)
 
 
+def test_draws_are_got_ready_at_load_and_before_each_question_is_decoded_with_what_they_may_withhold():
+    fake = FakeContext(PLAIN, ["Hallo Welt"])
+    chat = ChatWrapper(Config(), context=fake)
+    assert len(fake.draw_preparations) == 1             # at load, before any decode
+    chat.begin([{"role": "system", "content": "S"}])
+    decoded_at, prepare = [], fake.prepare_draws
+
+    def recorded(sampling, withheld_count):
+        decoded_at.append(fake.total_prefilled())
+        return prepare(sampling, withheld_count)
+
+    fake.prepare_draws = recorded
+    before = fake.total_prefilled()
+    chat.reply("Frage").finish()
+    assert decoded_at[0] == before                      # before the question is decoded
+    (at_load, _), *during = fake.draw_preparations
+    assert all(sampling == at_load == generation_sampling(chat.config, None) and withheld > 0
+               for sampling, withheld in during)
+
+
+def test_where_the_draws_change_before_the_question_is_decoded_no_token_is_decoded_again():
+    fake = FakeContext(PLAIN, ["Hallo Welt"])
+    chat = ChatWrapper(Config(), context=fake)
+    chat.begin([{"role": "system", "content": "S"}])
+    changes, prepare = iter([False]), fake.prepare_draws
+    fake.prepare_draws = lambda sampling, withheld: prepare(sampling, withheld) and next(changes, True)
+    before = len(fake.prefill_calls)
+    assert chat.reply("Frage").finish().text == "Hallo Welt"
+    calls = [(start, n) for start, n, _ in fake.prefill_calls[before:]]
+    assert all(start + n <= later for (start, n), (later, _) in zip(calls, calls[1:]))
+
+
+def test_where_the_newest_decodes_logits_no_longer_serve_the_draws_the_prompts_last_token_is_decoded_again():
+    fake = FakeContext(PLAIN, ["Hallo Welt"])
+    chat = ChatWrapper(Config(), context=fake)
+    chat.begin([{"role": "system", "content": "S"}])
+    fake.draws_keep_logits = False
+    before = len(fake.prefill_calls)
+    assert chat.reply("Frage").finish().text == "Hallo Welt"
+    calls = fake.prefill_calls[before:]
+    asked = next(i for i, (_, _, logits) in enumerate(calls) if logits)
+    start, n, _ = calls[asked]
+    assert calls[asked + 1] == (start + n - 1, 1, True)
+
+
 def test_where_a_decode_does_not_block_only_the_first_token_is_shown_before_it_is_decoded():
     fake = FakeContext(PLAIN, ["Hallo Welt"], decode_blocks=False)
     chat = ChatWrapper(Config(), context=fake)
@@ -355,3 +402,40 @@ def test_a_thought_the_cap_closed_leaves_the_rooms_closing_for_a_later_thought()
     _, acc = _drawn_generation(pieces, order, set(), CallBoundary(), guard)
     # The first thought is closed at its cap; the second at the room the answer keeps.
     assert acc.token_ids.count(2) == 2
+
+
+def test_a_cache_the_draws_emptied_before_they_failed_is_decoded_again_by_the_next_question():
+    fake = FakeContext(PLAIN, ["Hallo Welt"])
+    chat = ChatWrapper(Config(), context=fake)
+    chat.begin([{"role": "system", "content": "S"}])
+    chat.reply("Frage").finish()
+    prepare = fake.prepare_draws
+
+    def failing(sampling, withheld_count):
+        fake.reset()                                    # as a warm-up empties it
+        raise EngineError("the engine failed while it got the draws ready")
+
+    fake.prepare_draws = failing
+    with pytest.raises(EngineError):
+        chat.reply("Noch eine").finish()
+    fake.prepare_draws = prepare
+    assert chat.reply("Und jetzt?").finish().text     # the fake refuses a decode past its end
+
+
+@pytest.mark.parametrize("template, call", [(TOOLS, "fn:clock{}"),
+                                            (JSON_TOOLS, '[{"name": "clock", "arguments": {}}]')],
+                         ids=["tags", "json"])
+def test_the_draws_got_ready_before_a_question_is_decoded_cover_every_draw_of_its_reply(template, call):
+    fake = FakeContext(template)
+    chat = ChatWrapper(Config(context_size=2048), context=fake)
+    chat.begin(opened("persona"), tools=[ToolSpec("clock", "time", {"type": "object", "properties": {}})])
+    # The last reply's room holds no call, so the generation withholds a call's opening.
+    for policy, script, cap in (("yield", [call], None), ("withhold", [], None),
+                                ("refuse", [], None), ("yield", [], 2)):
+        fake.call_script = list(script)
+        before = len(fake.draw_preparations)
+        list(chat.reply("wie spät?", tool_call_policy=policy, max_reply_tokens=cap))
+        (_, first), *later = fake.draw_preparations[before:]
+        assert all(withheld <= first for _, withheld in later), (policy, first, later)
+        for call in list(chat.pending_calls):
+            chat.inject_tool_result(call.id, "12 Uhr")

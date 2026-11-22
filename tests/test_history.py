@@ -1186,3 +1186,14 @@ def test_a_call_of_the_history_that_writes_a_key_twice_is_left_out_as_one_the_mo
     report = w.begin(opened("s", history))
     assert report.n_left_out_calls == 1
     assert all("tool_calls" not in m for m in w.conversation()["messages"])
+
+
+def test_a_begin_that_cuts_a_result_within_reach_so_that_it_fits_at_once_reports_the_cut(monkeypatch):
+    # A longest token shorter than the merged pieces stands for a template that writes a result shorter.
+    monkeypatch.setattr(FakeContext, "longest_token_bytes", lambda self: 1)
+    history = opened("persona", [{"role": "user", "content": "wie spät?"}, _calling_clock("a"),
+                                 _clock_result("a", " x" * 500_000)])
+    wrapper = ChatWrapper(Config(context_size=400), context=FakeContext(JSON_TOOLS, merges=True))
+    report = wrapper.begin(history, tools=[CLOCK])
+    assert [call.id for call in report.tool_results_cut] == ["a"]
+    assert wrapper.conversation()["messages"][-1]["content"].endswith(" of 1000000 characters kept)")

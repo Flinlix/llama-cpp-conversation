@@ -14,7 +14,7 @@ from typing import Any, cast
 from dataclasses import replace
 
 from .conversation_types import Conversation, GeneratedTurns
-from .generation import AnswerGuard, GenerationAccumulator
+from .generation import AnswerGuard, GenerationAccumulator, most_withheld
 from .cache_sync import CacheSync, Cancelled, Interrupt
 from .config import Config
 from .conversation_state import Changes, ConversationState, Published, Snapshot
@@ -69,7 +69,8 @@ class RenderedCache:
                                      lambda: self.template)
         self._eviction = Eviction(self._rendering, config, context.can_shift, self._state,
                                   self._targets.length)
-        self._cutting = ResultCutting(self._targets.length, self._state, self._text_within)
+        self._cutting = ResultCutting(self._targets.length, self._state, self._text_within,
+                                      getattr(context, "longest_token_bytes", None))
         self._windows = Windows(self._rendering, self._eviction, config, self._state)
         self._kept = KeptTurns(context, self._rendering, self._targets, self._state,
                                lambda: self.template, lambda: self.turn_open)
@@ -790,6 +791,19 @@ class RenderedCache:
         return self._memory.generate(self._generation_room(max_generated_tokens), generated,
                                      **options)
 
+    def _prepare_draws(self, sampling, recognizes_calls: bool, withhold: bool) -> None:
+        """Get the draws ready before the request is decoded, so that a change in what they need decodes nothing again.
+
+        See docs/decisions/0061-draws-among-the-likeliest-tokens-the-device-keeps.md.
+        """
+        template = self.template
+        guard = self._answer_guard(template)
+        withheld = most_withheld(template.call_boundary(recognizes_calls, withhold), guard)
+        if recognizes_calls and self._state.tools and template.can_withhold_calls:
+            # Where no call can close in the room left, the generation withholds its opening.
+            withheld = max(withheld, most_withheld(template.call_boundary(False, True), guard))
+        self._memory.prepare_draws(sampling, withheld)
+
     def _generation_room(self, max_generated_tokens: int) -> int:
         """The most tokens a generation from the cache's end may take: at most ``max_generated_tokens``, and the closing after the reply left room."""
         room = (self._config.context_size - len(self._memory.tokens)
@@ -840,6 +854,7 @@ class RenderedCache:
         try:
             if cancel is not None and cancel.is_set():
                 raise Cancelled("cancelled before the request was written")
+            self._prepare_draws(sampling, recognizes_calls, withhold)
             if answers_first:
                 # Within the attempt, so that a request refused or cancelled takes them back too.
                 self._write_answers_first(answers_first)

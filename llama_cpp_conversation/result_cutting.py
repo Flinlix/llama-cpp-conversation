@@ -70,10 +70,12 @@ class ResultCutting:
     """Writes results into the conversation state it was made with, measured with ``measure``."""
 
     def __init__(self, measure: Callable[[list[dict], bool], int], state: ConversationState,
-                 text_within: Callable[[str, int], int]) -> None:
-        """``text_within(text, n)`` is how many characters of ``text`` its own first ``n`` tokens spell."""
+                 text_within: Callable[[str, int], int],
+                 longest_token_bytes: Callable[[], int] | None = None) -> None:
+        """``text_within(text, n)`` is how many characters of ``text`` its own first ``n`` tokens spell; ``longest_token_bytes``, where given, the most bytes a token spells."""
         self._measure, self._state = measure, state
         self._text_within = text_within
+        self._longest_token_bytes = longest_token_bytes
 
     def write(self, message: dict, owed_after: list[tuple[ToolCall, str]], room: int,
               make_room: Callable[[], bool]) -> bool:
@@ -84,11 +86,15 @@ class ResultCutting:
         Raises:
             ContextOverflowError: If not even the result cut to nothing fits.
         """
-        messages, text = self._state.messages, message["content"]
+        messages, whole = self._state.messages, message["content"]
+        text = self._within_reach(whole, room)
         messages += [message] + [self._held_for(later, later_id, "") for later, later_id in owed_after]
         at = len(messages) - len(owed_after) - 1
         dropped = False
-        if not self._fits(at, text, room):
+        if self._fits(at, text, room):
+            if text is not whole:
+                self._keep_within_reach(at, message, text, "the result", "to fit")
+        else:
             # Held cut to nothing instead, so that what this one is cut to leaves room for
             # each of them, its note included.
             del messages[at + 1:]
@@ -110,7 +116,7 @@ class ResultCutting:
                 kept = _most_kept(lambda n: self._fits(at, cut_result(text, n), room), len(text),
                                   self._guess(at, text, room))
                 messages[at] = with_result_text(message, cut_result(text, kept))
-                self._note(self._call_answered(at), kept, len(text), "the result", "to fit")
+                self._note(self._call_answered(at), kept, len(whole), "the result", "to fit")
         del messages[at + 1:]
         return dropped
 
@@ -125,20 +131,41 @@ class ResultCutting:
             message = messages[at]
             if message["role"] != "tool" or at in held or not message["content"]:
                 continue
-            text = message["content"]
+            whole = message["content"]
+            text = self._within_reach(whole, room)
             if self._fits(at, text, room):
+                if text is not whole:
+                    self._keep_within_reach(at, message, text, "a result", "at the begin")
                 return
             if self._length_with(at, cut_result(text, 0)) >= self._length_with(at, text):
                 continue                # its note alone is as long as it, so it stays whole
             if not self._fits(at, cut_result(text, 0), room):
                 messages[at] = with_result_text(message, cut_result(text, 0))
-                self._note(self._call_answered(at), 0, len(text), "a result", "at the begin")
+                self._note(self._call_answered(at), 0, len(whole), "a result", "at the begin")
                 continue
             kept = _most_kept(lambda n: self._fits(at, cut_result(text, n), room),  # noqa: B023 (called in this pass)
                               len(text), self._guess(at, text, room))
             messages[at] = with_result_text(message, cut_result(text, kept))
-            self._note(self._call_answered(at), kept, len(text), "a result", "at the begin")
+            self._note(self._call_answered(at), kept, len(whole), "a result", "at the begin")
             return
+
+    def _within_reach(self, text: str, room: int) -> str:
+        """``text`` cut, with its note, to the most characters ``room`` tokens can spell; whole where it is no longer.
+
+        Every token spells at most the longest token's bytes, so a longer prefix never fits and every cut keeps the same text.
+        """
+        if len(text) <= room or self._longest_token_bytes is None:
+            return text                 # within reach whatever the tokens, the vocabulary unread
+        reach = room * self._longest_token_bytes()
+        return text if len(text) <= reach else cut_result(text, reach)
+
+    def _keep_within_reach(self, at: int, message: dict, text: str, what: str, why: str) -> None:
+        """Keep the result at ``at`` cut to ``text``, its cut within reach, where it fits so, and report the cut."""
+        whole = message["content"]
+        note = _A_CUT_NOTE.search(text)
+        assert note is not None, "a result cut within reach carries its note"
+        self._state.messages[at] = with_result_text(message, text)
+        self._note(self._call_answered(at), int(note.group(1)), len(whole), what, why)
 
     def _held_for(self, later: ToolCall, later_id: str, text: str) -> dict:
         """The result room is kept for, for a call owed after the one written: ``text``, or an unreadable call's failure."""

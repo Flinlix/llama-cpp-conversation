@@ -493,6 +493,34 @@ def test_an_oversized_result_is_cut_keeps_its_tags_and_tells_the_model_and_the_c
     assert wrapper.reply("und sonst?").finish().tool_results_cut == ()
 
 
+def test_a_result_longer_than_the_room_could_spell_is_never_tokenized_whole():
+    wrapper, fake = tool_wrapper()
+    wrapper.begin(opened("persona"))
+    fake.call_script = ["fn:clock{}"]
+    call, = [e for e in wrapper.reply("wie spät?", tool_call_policy="yield")
+             if isinstance(e, ToolCall)]
+    asked = len(fake.tokenize_calls)
+    wrapper.inject_tool_result(call.id, "x" * 1_000_000)
+
+    longest = max(len(text) for text, _parse in fake.tokenize_calls[asked:])
+    assert longest <= wrapper.config.context_size * fake.longest_token_bytes() + 1000
+    assert fake.text_of(fake.cache).count(" of 1000000 characters kept)") == 1
+
+
+def test_a_result_cut_within_reach_that_then_fits_at_once_is_reported(monkeypatch):
+    # A longest token shorter than the merged pieces stands for a template that writes a result shorter.
+    monkeypatch.setattr(FakeContext, "longest_token_bytes", lambda self: 1)
+    wrapper, fake = tool_wrapper(merges=True)
+    wrapper.begin(opened("persona"))
+    fake.call_script = ["fn:clock{}"]
+    call, = [e for e in wrapper.reply("wie spät?", tool_call_policy="yield")
+             if isinstance(e, ToolCall)]
+    wrapper.inject_tool_result(call.id, " x" * 500_000)
+    assert fake.text_of(fake.cache).count(" of 1000000 characters kept)") == 1
+    fake.call_script = []
+    assert wrapper.reply().finish().tool_results_cut == (call,)
+
+
 def test_a_result_cut_under_a_registry_is_listed_on_its_reply():
     registry = ToolRegistry()
     registry.tool(lambda: "x" * 10_000, description="Die Zeit.", name="clock")

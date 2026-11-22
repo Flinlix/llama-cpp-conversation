@@ -12,8 +12,8 @@ import threading
 
 from .cache_context import CacheContext
 from .errors import InternalError
-from .generation import GenerationAccumulator
-from .generation import generate
+from .generation import AnswerGuard, CallBoundary, GenerationAccumulator
+from .generation import generate, most_withheld
 from .sequences import common_prefix_length
 from .loop_variant import LoopVariant
 
@@ -122,6 +122,21 @@ class CacheSync:
             return
         self._decode_at_end(tokens, want_logits)
 
+    def prepare_draws(self, sampling, withheld_count: int) -> None:
+        """Have the context get ready for draws with ``sampling`` that withhold at most ``withheld_count`` tokens, best before what they follow is decoded."""
+        # Optional in the protocol: a context without it keeps the newest decode's logits.
+        prepare = getattr(self._context, "prepare_draws", None)
+        if prepare is None:
+            return
+        # Taken to be lost until the context answers, and where it fails.
+        logits, self._logits = self._logits, False
+        try:
+            served = prepare(sampling, withheld_count)
+        except BaseException:
+            self._end = None        # failed as a decode does: decoded again by the next action
+            raise
+        self._logits = logits and served
+
     def generate(self, max_generated_tokens: int, out: GenerationAccumulator, **options):
         """Stream a generation from the cache's end; what it decodes is appended to :attr:`tokens`.
 
@@ -129,6 +144,9 @@ class CacheSync:
         """
         self.cancel = options.get("cancel")
         try:
+            self.prepare_draws(options["sampling"],
+                               most_withheld(options.get("boundary", CallBoundary()),
+                                             options.get("guard", AnswerGuard())))
             self._bring_up(want_logits=True)
             if not self._logits:
                 self._decode_again_with_logits()

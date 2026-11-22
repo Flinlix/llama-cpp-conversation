@@ -242,6 +242,10 @@ class FakeContext:
         # ("cut", position), ("shift", start, tokens) and ("restore", position).
         self.edits: list[tuple] = []
         self.samplings: list = []                # the sampling each generation was handed
+        # Each (sampling, withheld count) a generation got ready for, and whether that keeps
+        # the newest decode's logits.
+        self.draw_preparations: list[tuple] = []
+        self.draws_keep_logits = True
         self.recommended: dict[str, float] = {}  # the sampling the model states for itself
         self.resets = 0
         self.saved_states = 0
@@ -327,6 +331,9 @@ class FakeContext:
     def text_of(self, tokens: list[int]) -> str:
         """What ``tokens`` spell: characters, the generated ones as they were generated, and the tags."""
         return "".join(self.token_text(token) for token in tokens)
+
+    def longest_token_bytes(self) -> int:
+        return 4                        # a character's bytes: a merged piece spells two ASCII ones
 
     def token_bytes(self, token: int) -> bytes:
         return self.token_text(token).encode()
@@ -429,6 +436,10 @@ class FakeContext:
         pass
 
     # ----- the model -------------------------------------------------------------
+    def prepare_draws(self, sampling, withheld_count: int) -> bool:
+        self.draw_preparations.append((sampling, withheld_count))
+        return self.draws_keep_logits
+
     def sampled_tokens(self, sampling, withheld_tokens):
         """The next scripted call, else the next scripted reply without the tokens withheld, else the default one.
 

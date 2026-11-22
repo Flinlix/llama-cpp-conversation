@@ -520,6 +520,7 @@ def test_loading_ends_by_decoding_two_tokens_and_a_single_one_and_leaves_the_cac
         kv_seq_add=lambda ctx, seq, p0, p1, delta: None,
         decode=lambda ctx, tokens, pos, *rest: performed.append(("decode", len(tokens), pos)),
         kv_clear=lambda ctx: performed.append(("clear",)), supports_gpu_offload=lambda: False,
+        can_keep_candidates=False,
     )
     monkeypatch.setattr("llama_cpp_conversation.context.Backend", lambda: backend)
     model = tmp_path / "model.gguf"
@@ -556,7 +557,7 @@ def test_a_full_micro_batch_warms_up_first_only_where_layers_run_on_a_gpu(
         kv_seq_add=lambda ctx, seq, p0, p1, delta: None,
         decode=lambda ctx, tokens, pos, *rest: performed.append(("decode", len(tokens), pos)),
         kv_clear=lambda ctx: performed.append(("clear",)),
-        supports_gpu_offload=lambda: offload,
+        supports_gpu_offload=lambda: offload, can_keep_candidates=False,
     )
     monkeypatch.setattr("llama_cpp_conversation.context.Backend", lambda: backend)
     model = tmp_path / "model.gguf"
@@ -588,6 +589,7 @@ def _context_settings(tmp_path, monkeypatch, **settings) -> dict:
         can_shift=lambda ctx: True,
         kv_seq_rm=lambda ctx, seq, p0, p1: True, kv_seq_add=lambda *args: None,
         decode=lambda *args: None, kv_clear=lambda ctx: None, supports_gpu_offload=lambda: True,
+        can_keep_candidates=False,
         free_context=lambda ctx: asked.setdefault("freed", []).append(ctx),
         free_model=lambda model: asked.setdefault("freed", []).append(model))
     monkeypatch.setattr("llama_cpp_conversation.context.Backend", lambda: backend)
@@ -1198,3 +1200,154 @@ def test_a_decode_asks_for_the_logits_of_its_last_token_at_most(monkeypatch):
     for n, batch, logits in [(1, 8, True), (20, 8, True), (20, 8, False), (8, 8, True)]:
         backend.decode("ctx", list(range(n)), 0, 0, logits, batch)
     assert asked and max(asked) <= 1
+
+
+def _keeping_candidates(tmp_path, monkeypatch, refuses=False, gpu_layers=-1):
+    """A KVContext on a GPU whose engine keeps candidates, and what it was asked, in order."""
+    asked = []
+    backend = SimpleNamespace(
+        load_model=lambda path, layers, progress: "model",
+        metadata_value=lambda model, key: None, kv_cache_type_id=lambda name: 0,
+        new_context=lambda *args, **kwargs: "ctx",
+        vocab=lambda model: None, token_eos=lambda vocab: 2,
+        window_size=lambda model: 0, keeps_running_state=lambda model: False,
+        can_shift=lambda ctx: True, kv_seq_rm=lambda ctx, seq, p0, p1: True,
+        kv_seq_add=lambda *args: None, decode=lambda *args: None, kv_clear=lambda ctx: None,
+        supports_gpu_offload=lambda: True, can_keep_candidates=True,
+        vocabulary_size=lambda vocab: 1000,
+        keep_candidates=lambda ctx, seq, count: asked.append(("keep", count)) or (
+            None if refuses else f"stage {count}"),
+        keep_all_tokens=lambda ctx, seq, stage: asked.append(("all", stage)),
+        free_sampler=lambda stage: asked.append(("free", stage)),
+        free_context=lambda ctx: asked.append(("free", ctx)),
+        free_model=lambda model: asked.append(("free", model)))
+    monkeypatch.setattr("llama_cpp_conversation.context.Backend", lambda: backend)
+    model = tmp_path / "model.gguf"
+    model.touch()
+    return KVContext(Config(model_path=str(model), gpu_layers=gpu_layers)), asked
+
+
+def _sampling(**values):
+    return dataclasses.replace(SAMPLING_SET, **values)
+
+
+SAMPLING_SET = generation_sampling(Config(temperature=0.8, top_k=40, top_p=0.95, min_p=0.05,
+                                          repetition_penalty=1.0, presence_penalty=0.0,
+                                          frequency_penalty=0.0, penalty_window_tokens=64), None)
+
+
+def test_the_device_keeps_the_likeliest_tokens_every_draw_can_reach_and_changes_only_for_more(
+        tmp_path, monkeypatch):
+    context, asked = _keeping_candidates(tmp_path, monkeypatch)
+    assert asked == []                                  # none before the first draws are known
+    assert context.prepare_draws(_sampling(), 5) is False
+    assert asked == [("keep", 128)]                     # 40 + at least 32, in a multiple of 64
+    assert context.prepare_draws(_sampling(temperature=0.0), 3) is True    # 1 + 32 is among them
+    assert context.prepare_draws(_sampling(top_k=60), 80) is False
+    assert asked[1:] == [("all", "stage 128"), ("keep", 192)]
+    # A stage that keeps more than a generation needs stays.
+    assert context.prepare_draws(_sampling(), 5) is True
+    # Penalties that only lower a logit reach the window's tokens as well.
+    assert context.prepare_draws(_sampling(repetition_penalty=1.1, penalty_window_tokens=200),
+                                 0) is False
+    assert asked[-1] == ("keep", 320)
+    # No count serves a draw from the whole vocabulary: top-k off, a penalty that raises one,
+    # or more than the vocabulary.
+    for whole in (_sampling(top_k=0), _sampling(repetition_penalty=0.9),
+                  _sampling(top_k=990)):
+        context.prepare_draws(_sampling(), 5)
+        assert context.prepare_draws(whole, 20) is False
+        assert asked[-1][0] == "all"
+        assert context.prepare_draws(whole, 20) is True
+    context.close()
+    assert asked[-2:] == [("free", "ctx"), ("free", "model")]
+
+
+def test_the_device_keeps_at_least_128_tokens_so_that_a_penalty_in_the_usual_range_changes_nothing(
+        tmp_path, monkeypatch):
+    context, asked = _keeping_candidates(tmp_path, monkeypatch)
+    assert context.prepare_draws(_sampling(temperature=0.0), 0) is False
+    assert asked == [("keep", 128)]                     # 1 + 32 alone would round to 64
+    penalized = _sampling(temperature=0.0, repetition_penalty=1.2, penalty_window_tokens=32)
+    assert context.prepare_draws(penalized, 0) is True
+    assert asked == [("keep", 128)]
+    context.close()
+
+
+def test_a_change_of_stage_empties_no_cache_that_holds_tokens(tmp_path, monkeypatch):
+    context, _ = _keeping_candidates(tmp_path, monkeypatch)
+    backend = context._backend
+    backend.restore_state = backend.restore_whole_state = lambda ctx, seq, state: None
+    holdings = [lambda: context.remove_from(90), lambda: context.restore_state("state", 50),
+                lambda: context.restore_whole_state("whole")]
+    cleared: list = []
+    backend.kv_clear = cleared.append
+    for top_k, holds in zip((300, 500, 700), holdings):
+        context.prefill(list(range(100)), 0, want_logits=True)
+        holds()
+        cleared.clear()
+        assert context.prepare_draws(_sampling(top_k=top_k), 0) is False
+        assert cleared == []
+    context.remove_from(0)                              # emptied: warmed up again
+    assert context.prepare_draws(_sampling(top_k=900), 0) is False
+    assert cleared
+    context.close()
+
+
+def test_a_cache_emptied_and_then_put_back_to_a_saved_state_is_not_warmed_up(tmp_path, monkeypatch):
+    context, _ = _keeping_candidates(tmp_path, monkeypatch)
+    context._backend.restore_state = lambda ctx, seq, state: None
+    cleared: list = []
+    context._backend.kv_clear = cleared.append
+    context.reset()
+    context.restore_state("state", 50)
+    cleared.clear()
+    assert context.prepare_draws(_sampling(top_k=300), 0) is False
+    assert cleared == []
+    context.close()
+
+
+def test_a_compact_window_cache_emptied_by_a_cut_is_warmed_up_at_a_change_of_stage(
+        tmp_path, monkeypatch):
+    context, _ = _keeping_candidates(tmp_path, monkeypatch)
+    context._window_tokens = 16
+    context._backend.kv_seq_pos_min = lambda ctx, seq: 80     # the window no longer reaches back
+    cleared: list = []
+    context._backend.kv_clear = cleared.append
+    context.prefill(list(range(100)), 0, want_logits=True)
+    assert context.remove_from(50) == 0
+    cleared.clear()
+    assert context.prepare_draws(_sampling(top_k=300), 0) is False
+    assert cleared                                      # emptied: warmed up again
+    context.close()
+
+
+def test_the_longest_token_is_read_in_the_fingerprints_pass_over_the_vocabulary(tmp_path, monkeypatch):
+    context, _ = _keeping_candidates(tmp_path, monkeypatch)
+    passes = []
+    context._backend.vocabulary_pieces = lambda vocab: passes.append(1) or [b"a", b"abcd", b"ab"]
+    context._backend.metadata_value = lambda model, key: None
+    fingerprint = context.model_fingerprint()
+    assert context.longest_token_bytes() == 4 and context.model_fingerprint() == fingerprint
+    assert passes == [1]
+    context.close()
+
+
+def test_the_stage_is_freed_after_the_engine_context_that_holds_it(tmp_path, monkeypatch):
+    context, asked = _keeping_candidates(tmp_path, monkeypatch)
+    context.prepare_draws(_sampling(), 0)
+    context.close()
+    assert asked[-3:] == [("free", "ctx"), ("free", "stage 128"), ("free", "model")]
+
+
+def test_an_engine_that_refuses_the_stage_is_not_asked_again(tmp_path, monkeypatch):
+    context, asked = _keeping_candidates(tmp_path, monkeypatch, refuses=True)
+    assert context.prepare_draws(_sampling(), 0) is False
+    assert context.prepare_draws(_sampling(top_k=200), 0) is True
+    assert asked == [("keep", 128)]
+
+
+def test_the_processor_alone_draws_from_every_logit(tmp_path, monkeypatch):
+    context, asked = _keeping_candidates(tmp_path, monkeypatch, gpu_layers=0)
+    assert context.prepare_draws(_sampling(), 0) is True
+    assert asked == []

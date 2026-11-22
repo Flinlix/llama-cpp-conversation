@@ -167,6 +167,11 @@ class AnswerGuard:
         return self.thought_opening
 
 
+def most_withheld(boundary: CallBoundary, guard: AnswerGuard) -> int:
+    """The most tokens one draw of a generation under ``boundary`` and ``guard`` withholds."""
+    return len(boundary.withheld_tokens) + len(guard.thought_opening) + len(guard.end_tokens)
+
+
 def generate(
     context: CacheContext, start_pos: int, max_generated_tokens: int, *,
     sampling: DrawnSampling,

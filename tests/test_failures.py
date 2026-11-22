@@ -33,7 +33,7 @@ from llama_cpp_conversation.generation import GenerationAccumulator
 class _Flaky(FakeContext):
     """A fake cache whose next decode, cut or generation fails once, or whose operation number ``fail_at`` fails; a failed decode lands some of its tokens first."""
 
-    fail = None             # "decode", "cut" or "generate"
+    fail = None             # "decode", "cut", "generate" or "prepare"
     fail_at = None          # counted over every operation from 0
     operations = 0
 
@@ -92,6 +92,13 @@ class _Flaky(FakeContext):
             self.cache = self.cache[:len(self.cache) // 2]      # left as no saved point holds it
             raise EngineError("the cache refused the saved state")
         super().restore_whole_state(state)
+
+    def prepare_draws(self, sampling, withheld_count):
+        # Not counted among the operations, so that a recorded sequence's failure stays where it was.
+        if self.fail == "prepare":
+            self.fail = None
+            raise EngineError("the device refused to get ready for the draws")
+        return super().prepare_draws(sampling, withheld_count)
 
     def sampled_tokens(self, *args, **kwargs):
         if self.fail == "generate":
@@ -1419,3 +1426,17 @@ def test_a_begin_that_keeps_or_takes_back_a_conversation_failing_at_any_point_ch
         w.reply("Und jetzt?").finish()
         assert_cache_reads_as_rendered(w, fake)
         w.close()
+
+
+def test_a_reply_whose_draws_cannot_be_got_ready_leaves_everything_as_it_was_and_its_cancel_unheld():
+    w, fake = _flaky()
+    w.begin([{"role": "system", "content": "S"}])
+    w.reply("eins").finish()
+    before, cancel = _state(w), threading.Event()
+    fake.fail = "prepare"
+    with pytest.raises(RuntimeError, match="get ready for the draws"):
+        w.reply("zwei", cancel=cancel).finish()
+    assert _state(w) == before
+    cancel.set()            # set later, as a caller may: it belongs to the failed request alone
+    w.begin([{"role": "system", "content": "S"}])
+    assert w.reply("drei").finish().text

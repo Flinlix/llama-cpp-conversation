@@ -31,7 +31,17 @@ the library's own loop through four steps: `sampled_tokens` draws,
 same on every context; a call's closing tag is decoded with `prefill` asking
 for no logits, since a result follows it, not a draw. `decode_blocks` says
 whether `decode_generated` returns only once the decode is done; where it does,
-each token's text is yielded before the token is decoded. `save_whole_state`
+each token's text is yielded before the token is decoded, as is the first
+token of every generation. Two members are optional. `prepare_draws` is told,
+once at load, before each generation's request is decoded and again before
+it draws, the sampling it draws with and how many tokens a draw may withhold
+at most, and answers whether the newest decode's logits still serve those
+draws; where it answers `False` once the prompt is decoded, the library
+decodes the prompt's last token again. A context without it is taken
+to keep them. `longest_token_bytes` gives the most bytes one token of the
+vocabulary stands for: a tool result longer than the room could ever spell is
+then cut to that before it is tokenized. Without it such a result is tokenized
+whole first. `save_whole_state`
 and `restore_whole_state` keep and put back everything the cache holds, for
 `kept_conversation_bytes`; a context that cannot may raise `RuntimeError` from
 the first, and no conversation is then kept. `chat_template_text` takes a

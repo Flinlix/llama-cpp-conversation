@@ -108,6 +108,11 @@ class ChatWrapper:
             addon = addon_file(config.model_path, self._context.chat_template_text())
             self._config = with_model_sampling(
                 config, self._context.recommended_sampling(), addon)
+            prepare_draws = getattr(self._context, "prepare_draws", None)
+            if prepare_draws is not None:
+                # Ready for the draws of a reply under the configured sampling before the first
+                # decode, so that such a reply does not decode its prompt's last token again.
+                prepare_draws(generation_sampling(self._config, None), 0)
             self._templates = ResolvedTemplates(self._context, addon["call"], addon["reasoning_on"],
                                                 addon["reasoning_levels"])
             if any(self._templates.capabilities(tools).can_call_tools for tools in (False, True)):

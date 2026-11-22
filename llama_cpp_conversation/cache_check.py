@@ -36,6 +36,9 @@ class _ReadsTokensOnly:
     def token_bytes(self, token: int) -> bytes:
         return self._context.token_bytes(token)
 
+    def longest_token_bytes(self) -> int:
+        return self._context.longest_token_bytes()
+
     def is_special(self, token: int) -> bool:
         return self._context.is_special(token)
 
@@ -84,6 +87,9 @@ class _ReadsTokensOnly:
 
     def restore_whole_state(self, state) -> None:
         pass
+
+    def prepare_draws(self, sampling, withheld_count: int) -> bool:
+        raise InternalError("the cache check generates nothing")
 
     def sampled_tokens(self, sampling, withheld_tokens):
         raise InternalError("the cache check generates nothing")
