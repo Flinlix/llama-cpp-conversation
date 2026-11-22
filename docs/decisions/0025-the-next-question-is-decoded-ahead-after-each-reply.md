@@ -28,8 +28,8 @@ previous reply is still being read.
 
 ## Consequences
 
-- Measured through the owner's server on Gemma 4 26B at 8k, 36 questions of
-  about 280 tokens: the first word with the context full took 182 to 184 ms
+- Measured on Gemma 4 26B at 8k, with a caller that injects each question
+  and then asks for a reply without text, 36 questions of about 280 tokens: the first word with the context full took 182 to 184 ms
   before the injected path was fixed and 97 to 98 ms after (90 to 99 ms for
   the piece-built wrapper). The injected path had taken 224 ms against 84 ms
   for `reply(text)`.

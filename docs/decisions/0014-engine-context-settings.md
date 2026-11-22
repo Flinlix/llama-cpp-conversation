@@ -41,9 +41,10 @@ defaults departed from llama.cpp's without a reason, and one setting
 ## Consequences
 
 - Measured on 2026-11-21 on an RTX 3090: one row of logits instead of a
-  micro-batch's took the device's compute buffer from 543.6 to 152.6 MiB at
-  the server's settings with Gemma 4 26B A4B, 390 MiB less, and 470 MiB less
-  with Gemma 4 E2B; 13 of 13 greedy replies were the same.
+  micro-batch's took the device's compute buffer from 543.6 to 152.6 MiB
+  with Gemma 4 26B A4B (all layers on the card, context 8192, a q8_0 cache,
+  flash attention, the compact window cache, batch 512), 390 MiB less, and
+  470 MiB less with Gemma 4 E2B; 13 of 13 greedy replies were the same.
 
 - Measured before the unified cache, engine alone at 6,000 tokens deep: 103.4
   tokens/s on the GPU without it, 118.6 with it (the windowed cache gave
