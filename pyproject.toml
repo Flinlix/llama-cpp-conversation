@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "llama-cpp-conversation"
-version = "3.3.0"
+version = "3.3.1"
 description = "A chat library for llama.cpp that prefills as little as possible, so that conversations stay fast even on small machines."
 readme = "README.md"
 license = "Apache-2.0"
