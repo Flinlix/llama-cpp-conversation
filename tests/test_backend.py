@@ -1148,10 +1148,12 @@ def test_a_whole_state_saved_while_a_shift_waits_decodes_the_newest_token_again_
     calls = []
     ctx = object.__new__(KVContext)
     ctx._engine_context, ctx._max_batch_tokens = "ctx", 512
+    ctx._config = Config(kept_conversation_bytes=1 << 20)
     ctx._backend = SimpleNamespace(
         decode=lambda c, tokens, pos, seq, logits, batch: calls.append(("decode", list(tokens), pos)),
         kv_seq_rm=lambda c, seq, p0, p1: calls.append(("rm", p0, p1)) or True,
         kv_seq_add=lambda c, seq, p0, p1, delta: calls.append(("add", p0, delta)),
+        whole_state_bytes=lambda c: 5,
         save_whole_state=lambda c, seq: calls.append(("save",)) or b"state")
     ctx.prefill(list(range(400)), 0, want_logits=False)
     if shifted:
@@ -1159,6 +1161,18 @@ def test_a_whole_state_saved_while_a_shift_waits_decodes_the_newest_token_again_
     del calls[:]
     assert ctx.save_whole_state() == b"state"
     assert calls == ([("rm", 299, -1), ("decode", [399], 299)] if shifted else []) + [("save",)]
+
+
+def test_a_whole_state_larger_than_the_bound_is_refused_before_it_is_copied_out():
+    saved = []
+    ctx = object.__new__(KVContext)
+    ctx._engine_context = "ctx"
+    ctx._config = Config(kept_conversation_bytes=4)
+    ctx._backend = SimpleNamespace(whole_state_bytes=lambda c: 5,
+                                   save_whole_state=lambda c, seq: saved.append(c) or b"state")
+    with pytest.raises(RuntimeError, match="kept_conversation_bytes"):
+        ctx.save_whole_state()
+    assert saved == []
 
 
 def test_the_engine_is_asked_for_one_row_of_logits_per_decode_where_the_binding_has_the_setting(

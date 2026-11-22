@@ -19,10 +19,12 @@ feature off.
   kept one shares more than 256 tokens more of the new conversation than the
   cache does, it is restored instead and what differs from it is decoded. The
   entry is taken out of the store before anything else is kept.
-- The oldest kept goes first; one that alone exceeds the bound is not kept. The
-  bound holds once they are kept; while one is saved it takes its own size
-  beside them. A whole state is not saved again for a cache at least as long
-  as one whose state did not fit.
+- The oldest kept goes first; one that alone exceeds the bound is not kept,
+  and its size is asked of the engine before it is saved, so that it is never
+  copied out. The bound holds once they are kept; while one is saved it takes
+  its own size beside them. Where a context of one's own saves a state larger
+  than the bound, a whole state is not saved again for a cache at least as
+  long as that one.
 - Only a begin keeps or switches; an eviction never does.
 - A cache that can neither shift nor cut keeps no conversation.
 - A failed action puts the kept conversations back as they were.
@@ -37,6 +39,13 @@ feature off.
 ## Consequences
 
 - Switching back to a kept conversation decodes only what differs from it.
+- A kept conversation takes the model's cache per token times its tokens.
+  Measured on 2026-11-21: 874.5 MiB for 4,070 tokens with Gemma 4 26B A4B on
+  an RTX 3090, about 220 KiB per token, copied from the card in 0.4 s; 36 MiB
+  for 2,047 tokens with Gemma 4 E2B on the processor, about 18 KiB per token.
+  Before the size was asked first, a state larger than the bound was copied
+  out in full and thrown away, once per conversation length; asking the size
+  takes 0.1 to 0.3 ms.
 - The RAM is spent only where the caller sets a bound.
 
 ## Alternatives rejected

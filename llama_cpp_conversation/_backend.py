@@ -458,14 +458,18 @@ class Backend:
         self._state_buffers.append(buffer)
         return buffer
 
+    def whole_state_bytes(self, ctx) -> int:
+        """How many bytes :meth:`save_whole_state` takes now."""
+        # Saved for one sequence, the state leaves out those positions; a cut after the restore needs them.
+        return self._state_size(ctx, _EVERY_SEQUENCE, 0)
+
     def save_whole_state(self, ctx, seq: int):
         """All of ``seq``'s state, as a host buffer of its own, with the positions its window layers no longer attend over.
 
         Raises:
             RuntimeError: If the build saves nothing.
         """
-        # Saved for one sequence, the state leaves out those positions; a cut after the restore needs them.
-        size = self._state_size(ctx, _EVERY_SEQUENCE, 0)
+        size = self.whole_state_bytes(ctx)
         buffer = (ctypes.c_uint8 * size)()
         if self._state_get(ctx, buffer, size, _EVERY_SEQUENCE, 0) != size:
             raise EngineError("the engine did not save the cache's state")

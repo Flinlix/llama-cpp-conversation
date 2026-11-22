@@ -252,8 +252,12 @@ class KVContext:
         """Everything the cache holds, for :meth:`restore_whole_state`, as a buffer whose length is its size in bytes.
 
         Raises:
-            RuntimeError: If the engine saves nothing, or a shift waits that no decode can apply.
+            RuntimeError: If the engine saves nothing, a shift waits that no decode can apply, or
+                the state would take more than ``kept_conversation_bytes``, which is asked first.
         """
+        if self._backend.whole_state_bytes(self._engine_context) > self._config.kept_conversation_bytes:
+            raise EngineError("the cache's state would take more than kept_conversation_bytes; "
+                              "it is not saved")
         if self._shift_pending:
             # The newest token decoded again applies the shift, so that the keys saved are shifted.
             if self._newest is None:
