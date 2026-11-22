@@ -30,8 +30,8 @@ alphanumeric characters, or refuse a short one.
 
 - About 60 million calls per conversation before an id would pass nine
   characters.
-- A server can read each call's id from what the library returns instead of
-  keeping its own list.
+- A caller can read each call's id from what the library returns; it needs
+  no list of its own.
 
 ## Alternatives rejected
 

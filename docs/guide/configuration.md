@@ -87,12 +87,12 @@ then drops the history well below the eviction threshold and reads the
 conversation it keeps again from the start, every few turns rather than every
 turn.
 
-That reading happens in the work after a reply, while the reply is read or
-spoken, so the wait before the next first word does not change. These do:
+That reading happens in the work after a reply, while the reply is read, so
+the wait before the next first word does not change. These do:
 
 - An action that comes during that work waits for the rest of it. Truncating
-  the last reply before that work began, as when the listener interrupts
-  speech at once, does not wait: the work then runs on the truncated reply. On
+  the last reply before that work began, as when a caller truncates right
+  after the reply, does not wait: the work then runs on the truncated reply. On
   any cache that cannot shift, a question asked
   while the kept history is read again waits for that reading, since it needs
   the history.
@@ -107,7 +107,7 @@ spoken, so the wait before the next first word does not change. These do:
   the switch cuts back further than that, so `kept_conversation_bytes` saves
   little with the compact cache.
 - A machine too slow to read the kept history again within the time an answer
-  takes to read or speak turns the work after a reply into a pause the next
+  takes to read turns the work after a reply into a pause the next
   question meets.
 
 On the full-size cache too, the engine reuses the cells its window layers no

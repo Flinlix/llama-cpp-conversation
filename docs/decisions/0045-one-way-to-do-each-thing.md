@@ -29,7 +29,7 @@ more pair that can disagree.
 - Types that serve only the library are not exported: `ModelReader`,
   `GenerationAccumulator`, `CallBoundary`, `ToolCallFragments`, `CallBody`,
   `result_text`. The test stand-in ships as `llama_cpp_conversation.testing`,
-  so a server's suite can run on it.
+  so a caller's own tests can run on it.
 - A wrong state is refused at once by `reply()`, against the published copy
   (0044), not at the first read of its stream.
 
@@ -37,8 +37,8 @@ more pair that can disagree.
 
 - A caller cannot pair the system prompt of one `begin` with the history of
   another.
-- A server keeps only its own call ids and reads everything else from the
-  library.
+- A caller need keep only its own call ids and can read everything else from
+  the library.
 
 ## Alternatives rejected
 

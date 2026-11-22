@@ -94,7 +94,7 @@ wait for the first word was the same within 1 ms either way.
 
 ## Alternatives rejected
 
-- The whole chain on the device, which the performance review measured with
+- The whole chain on the device, measured with
   plain llama-cpp-python at 8 percent more tokens per second on Gemma 4 E2B
   and 4 percent on the 26B: the logits never reach the host, so a token that
   may not end the turn yet could not be drawn again, and a chain whose

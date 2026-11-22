@@ -7,7 +7,7 @@ Date: 2026-11-19
 The library signalled failure with six exception types and no pattern: a
 wrong type was a `TypeError` in some calls and a `ValueError` in others, only
 settings named the field they refused, and raw Python errors escaped with no
-cause. A server had to check each request field beforehand to say which was
+cause. A caller had to check each argument beforehand to say which was
 wrong.
 
 ## Decision

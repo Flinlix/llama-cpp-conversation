@@ -18,7 +18,7 @@ kept history again at an eviction instead.
   eviction drops the history well below the threshold and decodes what it
   keeps again (0023), in the work after a reply (0027).
 - An action that comes during that work waits for the rest of it; no call
-  tells the library that a reply was heard.
+  tells the library that a reply reached its reader.
 - A cut checks what the window layers still hold. A compact cache passes the
   load's probe for a cut at its end, but a cut further back than those layers
   still reach leaves them without the positions the next token attends over,
@@ -82,7 +82,7 @@ listener's next question takes longer to say than the GPU's reading again.
 
 ## Alternatives rejected
 
-- A call that says a reply was heard, the reading again waiting for it: one
+- A call that says a reply reached its reader, the reading again waiting for it: one
   more call for every caller, for a wait that on a fast machine falls inside
   the listener's next question anyway.
 - Building the trimmed conversation in a second sequence beside the current

@@ -4,7 +4,7 @@ Date: 2026-11-19
 
 ## Context
 
-A server that serves several conversations on one model switches between them
+A caller that keeps several conversations on one model switches between them
 with `begin`, and each switch decoded the other conversation again from the
 start. The owner asked for a RAM bound, and that a bound of 0 switch the
 feature off.

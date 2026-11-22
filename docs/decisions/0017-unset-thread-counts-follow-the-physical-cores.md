@@ -55,4 +55,4 @@ speed of 4 threads under every load.
   the old 4 threads, and the load's first decodes, which run on the prefill
   threads, took up to 8.6 s instead of 1.0 s.
 - Reading only the top of `/sys/fs/cgroup`: on a host that is the root group,
-  so a quota on the service the process runs in was missed.
+  so a quota on a service the process runs in was missed.

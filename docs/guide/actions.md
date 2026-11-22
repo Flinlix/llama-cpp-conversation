@@ -6,7 +6,7 @@
 | adding context | `inject(text, role="user")` |
 | asking | `reply(text=None, *, tool_call_policy=None, max_calls=None, max_reply_tokens=None, max_thought_tokens=None, stop=None, cancel=None, sampling=None)` |
 | answering a call yourself | `inject_tool_result(call_id, result)`, then `reply()` |
-| truncating the last reply to what was heard | `truncate_last_reply(keep_text)` |
+| truncating the last reply to what reached the reader | `truncate_last_reply(keep_text)` |
 | reading the conversation back | `conversation()` |
 | where it stands | `total_tokens`, `config`, `can_shift`, `capabilities(tools=...)`, `turn_open`, `pending_calls`, `awaits_reply`, `generated_turns()`, `wait_idle(timeout_s)` |
 | ending | `close()` |
@@ -74,7 +74,7 @@ read.
 `pending_calls`, oldest first, then `reply()`, which keeps the turn's
 `tool_call_policy`.
 
-**Truncating the last reply to what was heard.** `keep_text` is the part of the
+**Truncating the last reply to what reached the reader.** `keep_text` is the part of the
 last reply that stays: a prefix of its text, or of the text its stream showed.
 That stream text may begin with a blank line after a tool's result. Where one
 stream ran a call and then went on, it also holds the text before the call.

@@ -51,4 +51,4 @@ a second way to do what a begin does.
 - `change_settings` and `declare_tools`: second ways to change what a begin
   changes.
 - Refusing a history whose call turn is left open before a later question: it
-  blocked a server's resume.
+  refused a begin from a saved history.

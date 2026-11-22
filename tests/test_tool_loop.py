@@ -195,7 +195,7 @@ def test_a_refusing_reply_runs_none_even_of_a_declared_tool():
 
 
 def test_a_call_the_library_runs_is_handed_over_in_the_stream_before_it_runs():
-    """An app can say what is being looked up while the tool runs."""
+    """A caller can say what is being looked up while the tool runs."""
     seen = []
     registry = ToolRegistry()
     registry.tool(lambda: seen.append("ran") or "12:00", description="Die Zeit.", name="clock")

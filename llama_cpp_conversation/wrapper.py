@@ -738,7 +738,7 @@ class ChatWrapper:
 
     # ----- truncating the last reply ------------------------------------------
     def truncate_last_reply(self, keep_text: str) -> None:
-        """Truncate the last reply to ``keep_text``, what its reader read or heard of it.
+        """Truncate the last reply to ``keep_text``, what of it reached its reader.
 
         The cache is cut back to where the truncated reply differs and decoded again from there.
 

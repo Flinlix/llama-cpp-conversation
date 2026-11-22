@@ -6,9 +6,9 @@ Date: 2026-11-19
 
 The engine's first decode of a given shape prepares it, a one-time cost. Left
 to the first request, it lands on the first `begin` with a real system prompt
-or on the first word. A caller may start the model with an empty `begin`,
-too short to trigger the large-batch preparation, so that the cost falls on
-its first `begin` with a persona.
+or on the first word. An empty `begin` is too short to trigger the
+large-batch preparation, so after one the cost falls on the first `begin`
+with a system prompt.
 
 ## Decision
 
@@ -26,9 +26,9 @@ its first `begin` with a persona.
 - Measured on an RTX 3090 with Gemma 4 26B A4B Q4_K_M, all layers on the card,
   batch 512, flash attention, q8_0 cache: the full batch costs 0.68 s of the
   load and takes the first `begin` from 0.59 s to 0.017 s; the first word and
-  one decode step are the same either way. Loaded, begun empty and then begun
-  with a persona, that first `begin` with a persona took 0.61 to 0.93 s without it and 0.04 s with
-  it.
+  one decode step are the same either way. Measured as: load, empty `begin`,
+  `begin` with a system prompt and six exchanges; that `begin` took 0.61 to
+  0.93 s without it and 0.04 s with it.
 - Measured on an i9-9900K (6 threads, context 4096, batch 2048): a full batch
   took 8.3 s of gemma-3-1b's load and 20.4 s of Llama-3.2-3B's, and saved
   nothing, the first `begin` and the first word being the same with the small
@@ -44,7 +44,8 @@ its first `begin` with a persona.
 - A full `max_batch_tokens` batch on the GPU: the engine computes a batch one
   micro-batch at a time and the first prepares it; one micro-batch saves about
   0.26 s per load (estimated).
-- A warm-up sized by a setting, which no caller asked for, and the same
-  warm-up in one caller's start alone, which would help that caller only.
+- A warm-up sized by a setting, which no caller asked for, and leaving the
+  warm-up to each caller, which would leave every caller that does not do it
+  with the slower first `begin`.
 - A `warmup` member in the protocol called at the first `begin`: only one
   context needs it.

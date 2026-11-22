@@ -538,7 +538,7 @@ def test_a_reply_that_ran_to_the_end_of_the_context_begins_again():
 
 
 def test_two_questions_in_a_row_are_joined_at_a_begin_where_the_template_writes_no_two():
-    """As a running conversation joins them, so a history kept with both, as a server keeps it, begins again."""
+    """As a running conversation joins them, so a history kept with both begins again."""
     from llama_cpp_conversation.testing.invented_templates import REFUSES_TWO_USER_TURNS
     w = ChatWrapper(Config(context_size=500), context=FakeContext(REFUSES_TWO_USER_TURNS, gen_tokens=3))
     report = w.begin(opened("s", [{"role": "user", "content": "eins"},

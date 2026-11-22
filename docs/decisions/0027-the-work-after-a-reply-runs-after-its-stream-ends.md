@@ -6,8 +6,8 @@ Date: 2026-11-20
 
 After a reply, the conversation is evicted where it is over a limit and
 decoded ahead of the next question. A stream that ended only after that work
-made a server that speaks the last sentence at the stream's end speak it
-later.
+made a caller that acts on the stream's end, such as one that reads the last
+sentence aloud, wait that much longer.
 
 ## Decision
 

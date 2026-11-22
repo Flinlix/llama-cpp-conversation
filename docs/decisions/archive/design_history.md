@@ -572,7 +572,8 @@ with a marker render and split the engine file; narrow the load check and stop
 a cache context from handing in template pieces; make the public calls one way
 each; rename the tool flag; let a conversation follow the clock; drop well
 below the limit where the cache cannot shift; and commit without pushing. The
-language-model image was rebuilt later, in "Measured through the stack".
+measurement over a long conversation came later, in "Measured over a long
+conversation".
 
 ### Every text placed by a marker render
 
@@ -769,13 +770,12 @@ the first word was 196 ms for an 8-word question (the old code 195 ms) and
 (406 ms). Plain chat on 8 real models, 12 replies each in a small context, held
 the template's render before every reply.
 
-## 2026-11-08: Measured through the stack, an injected question made fast, one read of the conversation, a state kept before the oldest question
+## 2026-11-08: Measured over a long conversation, an injected question made fast, one read of the conversation, a state kept before the oldest question
 
-### Measured through the stack
+### Measured over a long conversation
 
-The language-model image was rebuilt on the committed library and driven
-through the running stack's Chat Completions endpoint: 36 questions of about
-280 tokens each into Gemma 4 26B's 8k context, so that the conversation
+Measured on the committed library over a long conversation: 36 questions of
+about 280 tokens each into Gemma 4 26B's 8k context, so that the conversation
 evicted, then a tool call, its result and a question after it.
 
 | library | first word, first turns | first word, context full |
@@ -792,8 +792,8 @@ quoted JSON string.
 
 ### An injected question waits only for itself
 
-The server injects each question, then asks for a reply without text. That path
-was slow twice over, measured on the GPU with the stack's settings (224 ms
+Injecting each question, then asking for a reply without text, took a path
+that was slow twice over, measured on the GPU at that 8k context (224 ms
 against 84 ms for `reply(text)` once full):
 
 - An injected question was spliced only below `evict_above_tokens`, so a full
@@ -934,8 +934,8 @@ calls, a missing vocabulary handle, the boolean `flash_attn` beside
 release's `llama_cpp.py`: 0.3.10 adds the memory API, 0.3.23 the
 `llama_state_seq_*_ext` calls with `LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY` that
 the saved states rest on, and every other name the adapter calls is present
-from 0.3.9 on; the machines this runs on use 0.3.36. The floor is now 0.3.23
-in pyproject.toml, install.sh, the README and the server's image, every symbol
+from 0.3.9 on; 0.3.36 was the release tested. The floor is now 0.3.23
+in pyproject.toml, install.sh and the README, every symbol
 is required under its one current name, and the fallbacks went with
 `Backend.can_edit_cache` and `Backend.can_save_state`, which could no longer
 answer anything but yes. install.sh now checks the build by constructing the
@@ -1131,8 +1131,7 @@ the "Kept" paragraph leaves to the user's answer were made, and so was the
 removal of `calls="run"` and of the registry `begin` keeps.
 
 The rethink found several second ways of doing one thing in the public
-interface. Each change below removes one; the service changed to match where
-it used one. Four of them revise a recorded decision, named at each.
+interface. Each change below removes one. Four of them revise a recorded decision, named at each.
 
 **One way to say how a call is written.** This revises "How a call's
 format is recovered", which kept `ChatWrapper(tool_calls=...)` as a way out
@@ -1187,10 +1186,9 @@ kept `reply_open` as the one state property. `ChatWrapper.owed_calls` lists
 the calls still waiting for a result, published with the conversation after
 each change, so a reader on any thread sees them as the newest finished change
 left them. A locked read was rejected: it would block a thread that reads it
-while its own stream holds the lock. The service keeps only its own call ids
-and pairs the newest ids with the owed calls; its copy of the owed calls is
-gone, and with it a defect in reading back a batch of calls only partly
-answered (see its design notes, 2026-11-09).
+while its own stream holds the lock. A caller can keep only its own call ids
+and pair the newest ids with the owed calls, with no copy of the owed calls of
+its own.
 
 **One cache type spelling.** `kv_cache_type` defaults to `"f16"`, and
 `None` is no longer accepted. The documentation already said `None` meant the
@@ -1576,7 +1574,7 @@ force it; `False` with a quantized cache is refused as before.
 choice (B), `log_level` and `LOG_LEVELS` are removed. `log_level` set the
 level of llama-cpp-python's own logger, whose callback prints straight to
 stderr past every Python handler, and no level of it showed real errors while
-hiding the load-time listings. Measured on this machine's build (0.3.36),
+hiding the load-time listings. Measured on a build of 0.3.36,
 recording the engine's raw log calls while gemma-3-1b loaded on the CPU and a
 corrupt file failed to load: the engine numbers its levels as ggml.h now does,
 1 debug, 2 info, 3 warn, 4 error and 5 a continuation of the line before, and
@@ -1586,8 +1584,8 @@ loading model", "invalid magic characters") were filed as `DEBUG`, its
 warnings (the full-size sliding-window cache, a control-looking token) as
 `ERROR`, and its 194 lines of metadata listing as `WARNING`. That is why
 "error" showed what looked like banners and "none" was the only way to hide
-them; the inference server's note "llama.cpp's banners can only be silenced
-entirely" read the same effect as the banners being filed at level 0.
+them; banners that seemed impossible to silence short of "none" were
+that effect, not banners filed at level 0.
 
 `_backend.py` now installs its own callback through `llama_log_set` when it is
 imported, held at module level since the engine keeps only a raw pointer, and
@@ -1669,8 +1667,8 @@ every value off instead was not part of the decision and is left open. (277.2)
 The README says that a shipped file, matched by its template, also wins over
 the values a fine-tune that keeps the template states in its own GGUF; a file
 next to that GGUF, or the caller's own values, are how to override it. Of the
-GGUFs on the machine this was built on, none both states sampling values and
-matches a shipped file, so the change alters no model's sampling there.
+GGUFs checked, none both states sampling values and matches a shipped file, so
+the change alters no model's sampling among them.
 
 **265.2: presence and frequency penalties in add-on files.** An add-on file
 could carry only the five sampling values a GGUF can state, although makers
@@ -1918,7 +1916,7 @@ render and decoded again from the first token that differs, which for two
 templates of different formats is the whole conversation, once. A turn kept as
 generated under the default template that the template for tools cannot place
 refuses the declaration, as 270.18 refuses any such action. None of the
-models in the local cache ships a template for tools, so the tests run an
+models tested ships a template for tools, so the tests run an
 invented pair: a default template that knows no tools, and the invented tool
 template in another format.
 
@@ -1957,7 +1955,7 @@ does is refused at load, naming the add-on file's key. It applies to both of a
 model's templates, as `call` does. Rejected: waiting until a model shows the
 case (289.5A), and a short real reply at every load to see whether the default
 thinks (289.5C), which costs every load a few seconds. The test for it uses an
-invented template, since no local model needs it; no shipped add-on file sets
+invented template, since no model tested needs it; no shipped add-on file sets
 it.
 
 ## 2026-11-11: The conversation and its surface
@@ -2230,8 +2228,8 @@ carries it: the stream, `Reply.tool_calls`, `pending_calls` and
 one, and the next call of the conversation is numbered past the highest id
 the history holds, counted before the oldest exchanges are dropped, so no
 call takes the id of one that did not fit. A history that gives one id to two
-calls is refused. The service kept its own list of ids for this
-reason and can read the id from what the library returns instead.
+calls is refused. A caller need keep no list of ids of its own for this:
+it can read the id from what the library returns.
 `inject_tool_result` still takes a call built by hand without an id, matched
 by its name and arguments, as before; a call that carries an id must carry
 the owed call's.
@@ -2316,7 +2314,7 @@ template's result block is now checked before the answer is written, and only
 `ContextOverflowError` counts as no room; any other refusal is raised.
 
 **268.9: a call the library runs is handed over before it runs.** Where a
-registry runs the calls, the stream held only text, so an app could not show
+registry runs the calls, the stream held only text, so a caller could not show
 what was being looked up while a tool ran. Each call that runs is now handed
 over in the stream as its `ToolCall` just before it runs, so the stream holds
 calls besides text in that mode too, as it does under `"yield"`. A call that
@@ -2534,7 +2532,7 @@ Measured on GLM-4.7 Flash with llama.cpp: `<|user|>`, `<|observation|>` and
 context ends a generation on the fixture's end-of-sequence tag and on the tags
 its `ends_generation` lists, which the GLM-4.7, GLM-5.3 and Flint templates
 state as `<|user|>` and `<|observation|>`. For GLM-5.3 and Flint this is not
-measured: their GGUFs are not in the local cache, and the value assumes the
+measured: their GGUFs were not tested, and the value assumes the
 converter marks the same tags as for GLM-4.7, whose chat format they share.
 
 **301.9B: the template for tools is chosen at `begin`.** Under 264.4 a
@@ -2770,7 +2768,7 @@ are stated in a test template's file only where the add-on file's own
 read side by side: that is now also the reasoning model of the family whose
 instruct model was already stated. The other add-on files that set sampling
 name a model card or a `generation_config.json` without quoting it, and
-neither is in the repository or the local model cache, so their values were
+neither is in the repository or among the models tested, so their values were
 not restated: the ones for the R1 distill of Qwen3 8B, Gemma 3 1B, Llama 3.2
 3B, Muse Glimmer 30B, Nemotron 3.5 Transcribe, North Mini Code, Qwen2.5
 Coder 7B, Qwen3 Coder 30B and Qwen3 8B. Each needs its card's words quoted in
@@ -2812,7 +2810,7 @@ llama.cpp's own tools do, and clears the cache again.
 The full batch of `max_batch_tokens` was meant to move the engine's first
 preparation of a large batch from the first `begin` into the load. Measured:
 
-- Graphics card, the user's production settings (Gemma 4 26B A4B Q4_K_M, all
+- Graphics card (Gemma 4 26B A4B Q4_K_M, all
   layers on the card, batch 512, flash attention, q8_0 cache), median of 3
   cold runs:
 
@@ -2872,7 +2870,7 @@ speed is the same within the noise of the shared machine, and the review had
 measured the same on a quieter one (140.2 to 140.6 against 141.7 tok/s on
 Llama-3.2-3B). The buffer is a quarter of the size, 0.9 to 1.6 GB less RAM at
 the default batch. On the graphics card, runs at batch 2048 did not start
-beside the user's other GPU processes (cause not measured), which is
+beside other GPU processes (cause not measured), which is
 consistent with the larger buffer; a larger micro-batch may speed prefill on a
 card, which is not measured. Rejected: a setting of its own for the
 micro-batch, which no caller asked for.
@@ -2991,7 +2989,7 @@ whitespace before it is held with it, as it is the opening's. The closing no
 longer counts, as it is searched for only inside a call, where nothing is
 shown. Measured on Llama-3.2-3B Q4_K_M on the processor (i9-9900K, 6 threads,
 context 4096, batch 512, greedy, `"refuse"`), six short questions, two runs
-each with `holdback2.py`: before, 2 to 10 tokens were sampled before the first
+each with a probe script: before, 2 to 10 tokens were sampled before the first
 delta, a median of 0.18 s (0.052 to 0.522 s), and "2 + 2 = 4" and "Blue" came
 only at the end; after, the first delta came after the first sampled token on
 every question, 0.051 to 0.053 s, which is the one decode before a token's text
@@ -3063,7 +3061,7 @@ generation getting what the earlier ones left, and the last one, cut by the
 cap, closes the turn with `"token_limit"`. The other options were to close the
 turn as `"refuse"` does, which takes from the model the chance to correct its
 call, or to hand the unreadable call over as an event, which leaves every
-caller a case to handle; the user chose neither. A server that called
+caller a case to handle; the user chose neither. A caller that calls
 `reply()` again on `"unreadable_tool_call"` no longer meets that reason under
 `"yield"`.
 
@@ -3213,8 +3211,8 @@ before the fix it failed on 18 of the 41 templates.
 **316.15 (C3): a calling message's text is written once.** A turn kept as
 generated holds the text the model wrote before its call, and the template was
 also given that text as the calling message's content. A template that writes
-a calling message's text after its results, as the one the user runs in
-production does, then wrote it a second time after the result, outside the
+a calling message's text after its results, as one of the test templates does,
+then wrote it a second time after the result, outside the
 kept tokens, and closed the turn after it, so the reply after the result
 followed a closed turn with no header of its own. The invented template that
 writes call blocks before content did the same. The template is now given each
@@ -3415,15 +3413,15 @@ function. `tests/test_cache_check.py` shows the check failing on a cache that
 reads the same with its tags held as letters, in a plain conversation, one
 that reasons and one with a kept turn, and on one with a typed tag held as the
 model's. The check renders each candidate twice now, which made the suite
-take about 134 seconds instead of 120 on the development machine.
+take about 134 seconds instead of 120 on the machine measured.
 
 ## 2026-11-12: Reasons moved out of the code
 
 316.32 (K21). Comments and docstrings that gave the reason for a line now
 leave it here, and the code keeps what it does and a pointer where one helps.
 
-- **Everything is settled while the wrapper is built,** so that a deployment
-  that could never work fails then, not at its first request.
+- **Everything is settled while the wrapper is built,** so that a
+  configuration that could never work fails then, not at its first action.
 - **The wrapper's lock is held for a whole action, a generation included.**
   One cache sequence serves every generation, so two actions whose decodes
   interleave would corrupt it.
@@ -3724,7 +3722,7 @@ is written, as before.
 
 The quota was read only at the top of `/sys/fs/cgroup`, which is the
 process's own group inside a container but the root group on a host, where
-no such file exists; a quota on the service or scope the process runs in, or
+no such file exists; a quota on a service or scope the process runs in, or
 on a group above it, was missed (found by the review of this round's fixes).
 Now the groups the process is in are taken from `/proc/self/cgroup`, every
 group from each of them up to the root is read, cgroup v2's `cpu.max` and
@@ -4134,14 +4132,12 @@ cache after each. On the processor nothing changes.
 The user asked why the first answer of a fresh conversation waits longer,
 once, and whether that time can move into the start. One such one-time cost
 is the engine's first preparation of a large batch: a load that decodes only
-a few tokens leaves it to the first `begin` with a real system prompt. The
-user's server starts the model with an empty `begin`, which is too short to
-trigger it, so the cost lands on the first `begin` with a persona. Measured
-on the card in the server's order of steps (load, empty `begin`, `begin`
-with a persona and six exchanges, a question; three runs each): without the
-full batch that first `begin` takes 0.61 to 0.93 s, with it 0.04 s, the same
+a few tokens leaves it to the first `begin` with a real system prompt, and an
+empty `begin` is too short to trigger it. Measured on the card as: load, empty
+`begin`, `begin` with a system prompt and six exchanges, a question; three
+runs each. Without the full batch that `begin` with a system prompt takes 0.61 to 0.93 s, with it 0.04 s, the same
 as every later one; the load takes 0.65 s longer; the first word of the
-answer is the same either way. The measurement of 316.1 on the user's production
+answer is the same either way. The measurement of 316.1 with these
 settings (Gemma 4 26B A4B Q4_K_M, all layers on the card, batch 512) gives
 the trade: the full batch costs 0.68 s of the load and takes the first
 `begin` from 0.59 s to 0.017 s; the first word and one decode step are the
@@ -4149,9 +4145,8 @@ same either way. 316.1 rejected the full batch because on the processor it
 cost 8 to 20 s of every load and saved nothing; tied to a GPU, that cost does
 not arise. Not measured: a model with only part of its layers on the GPU,
 where the full batch also runs the remaining layers on the processor.
-Rejected: the same warm-up in the server's start alone, which
-would help one caller and leave every other one with the slower first
-`begin`.
+Rejected: leaving the warm-up to each caller, which would leave every caller
+that does not do it with the slower first `begin`.
 
 
 ## 2026-11-13: Fixes from the whole-project review
@@ -4437,8 +4432,8 @@ cache decoded ahead of the next question, as after any other reply.
 366.34A (D10). The project is faster-llama-chat; the distribution was named
 `llama_chat`, as the README's title was. It now installs as
 `faster-llama-chat` and is still imported as `llama_chat`, the usual split of
-a distribution's name from its module's. The inference server installs the
-library by its path, so it is unaffected. An environment that installed the
+a distribution's name from its module's. A caller that installs the
+library by its path is unaffected. An environment that installed the
 old name keeps it beside a new install, both claiming `llama_chat`, so it is
 uninstalled first (`pip uninstall llama_chat`).
 
@@ -4731,8 +4726,8 @@ template for tools reasons and whose default does not as unable (405.4C).
 
 `begin`, `declare_tools` and a reply given a registry refused tools,
 reasoning and a system prompt the model cannot take with a plain
-`ValueError`. A caller that has to say which of its own fields was wrong,
-such as a server, therefore checked each one beforehand. They now raise
+`ValueError`. A caller that has to say which of its own fields was wrong
+therefore had to check each one beforehand. They now raise
 `UnsupportedError`, a `ValueError` whose `field` names the parameter that
 asked for it: `tools`, `messages` (a tool turn in the history), `reasoning`,
 `system_prompt` or `tool_call_policy`. Code that catches `ValueError` still
@@ -4846,8 +4841,8 @@ of the bugs above.
 
 The library signalled failure with six exception types and no pattern: a
 wrong type was a `TypeError` in some calls and a `ValueError` in others, only
-settings named the field they refused, and a caller such as a server could
-tell which request field was wrong only by checking beforehand. Every refusal
+settings named the field they refused, and a caller could
+tell which argument was wrong only by checking beforehand. Every refusal
 is now a `RefusalError`, a `ValueError` raised before the action changes
 anything, whose `field` names the argument or setting it is about, in one of
 six kinds by what the caller does next: `InvalidSettingError` and
@@ -4923,7 +4918,7 @@ is found by its Chat Completions messages and the question before them.
 A turn that called tools stays in the cache as the tokens the model generated,
 which no template writes back exactly: a call's spelling, its spacing, an
 unreadable call's text. Beginning again from `conversation()` therefore wrote
-those turns the template's way, and a server that begins again after a
+those turns the template's way, and a caller that begins again after a
 restart or a settings change lost them; 366.9 tried to carry an unreadable
 call's text back as text, which needed a search for the call's frame in each
 template and failed on two.
@@ -4949,11 +4944,11 @@ and the portable messages hold no text of it (398.10A). Only turns kept as
 generated are recorded: a plain reply is settled to the template's render
 live, so writing it the template's way is already exact.
 
-The user's word for it was "record"; it is named `generated_turns`, since the
-server already calls the conversation it stores its record. Each turn is found
+The user's word for it was "record"; it is named `generated_turns`, since
+`record` is a common name for a stored conversation. Each turn is found
 again by a digest of the messages it covers, as the caller keeps them,
-wherever they stand, not by its position: a server keeps its own list of
-messages and appends to it and drops from it, and generated turns read once
+wherever they stand, not by its position: a caller may keep its own list of
+messages and append to it and drop from it, and generated turns read once
 still serve that list. The search tries only spans that start on a reply that
 calls. `generated_turns()` reads them without copying the messages, for a
 caller that stores them after every reply.
@@ -4972,8 +4967,8 @@ Revised by "A begin compares with the cache; one action for settings": `change_s
 
 `declare_tools` could only add tools, and only into a conversation begun
 with tools where the model ships a template of its own for them; reasoning
-changed only at `begin`. A server that switched either began again from its
-own copy of the conversation: a begin empties the cache and keeps only half
+changed only at `begin`. A caller that switched either had to begin again from
+its own copy of the conversation: a begin empties the cache and keeps only half
 the context, while a running conversation fills three quarters, so each
 switch lost history and decoded everything again (measured on a 2,000-token
 context after 30 turns: 24 messages fell to 16, about 960 tokens decoded
@@ -4996,9 +4991,10 @@ then writes it as the template does.
 ### Whether a reply without text answers something, read without a copy
 
 A caller that asks for a reply without new text first has to know whether
-there is anything to answer. The server read the whole conversation to look
-at its newest message before every reply (about 1 ms at 900 messages, growing
-with them, measured), and kept its own copy of "the turn waits for its reply".
+there is anything to answer. A caller had to read the whole conversation to
+look at its newest message before every reply (about 1 ms at 900 messages,
+growing with them, measured), and keep its own copy of "the turn waits for its
+reply".
 `awaits_reply` now answers it from the newest publication, copying nothing:
 true where the newest message is a question, or a turn's results are all in.
 
@@ -5118,8 +5114,8 @@ A history went into `begin` in three forms, `(role, text)` pairs, message
 dictionaries, and a `ToolTurn` of steps (`str`, `Thought`, `ToolCall`,
 `ToolResult`) for a turn that called tools, and came back from
 `conversation()` with the same `ToolTurn`s. Inside, the library always held
-flat chat messages, so it converted on the way in and out, and the server
-converted its own flat messages to steps and back.
+flat chat messages, so it converted on the way in and out, and a caller with
+flat messages had to convert them to steps and back.
 
 Now a history is chat messages, as `conversation()` gives them: a question; a
 reply with `reasoning_content` and `tool_calls` where it has them, each call
@@ -5351,11 +5347,10 @@ A fresh review of this round's changes found these, each fixed and tested:
   unreadable call; it now says what `conversation()` gives and what a begin
   does with it.
 
-The server's messages hold no thought and no mark of an unreadable call, so
-turns holding either are not restored through the server. The user chose to
-leave thoughts so and to have the server leave unreadable calls out with
-their results, as the library does for another model (the server's design
-notes, "Calls the model wrote unreadably stay with the engine").
+Messages a caller keeps may hold no thought and no mark of an unreadable call,
+so turns holding either are not restored from them. Thoughts stay so, and a
+caller whose messages cannot carry an unreadable call leaves it out with its
+result, as the library does for another model.
 
 ### The `(role, text)` pair goes as well
 
@@ -5384,13 +5379,13 @@ template must still pass the check, as before.
 ### Two history forms
 
 Revises "One message form: chat messages in and out", "Exact restore with
-model handover" and the user's earlier choice to have the server leave
-unreadable calls out itself (previous entry).
+model handover" and the earlier rule that a caller leaves unreadable calls
+out itself (previous entry).
 
 The one mixed form, chat messages plus this library's extras (a thought, a
 mark on an unreadable call, arguments as an object, a result as any value),
-made every caller convert both ways; the server kept a copy of the rule for
-unreadable calls that had already drifted from the library's, and a saved turn
+made every caller convert both ways; every caller had to copy the rule for
+unreadable calls, and a copy can drift from the library's; and a saved turn
 with a thought was never found through it, since its fingerprint covered the
 thought. At the user's proposal there are now two forms. `begin` takes, and
 `conversation()` gives, the Chat Completions messages: the system message
@@ -5399,12 +5394,12 @@ default prompt only where none is given); `user`, `assistant` with text or
 `null` where it only calls, and `tool` with its `tool_call_id`; every call
 with an id, its arguments a JSON string. The smallest part of that form is
 taken: a list of content parts, the `developer` role, `name`, `refusal`,
-`audio` and a `custom` call are refused, naming where they stand, since the
-server reduces its requests to this part already, and so that whatever
+`audio` and a `custom` call are refused, naming where they stand, since
+this part is the smallest a conversation needs, and so that whatever
 `begin` takes `conversation()` gives back unchanged, but for the arguments'
-spelling (compact JSON in their own order, the server's own spelling) and an
+spelling (compact JSON in their own order, a caller's own spelling) and an
 empty reply text (`null` where the reply calls, `""` otherwise).
-`reasoning_content` is the one field beyond the official form, the name other
+`reasoning_content` is the one field beyond the official form, the name
 compatible servers use. A result is text only; a value from tool code is
 written as JSON at once and given back as that text, so the stored value and
 its special case went.
@@ -5447,7 +5442,7 @@ Measured or read while building it, each fixed with a test:
 Turns that still fall back to the template's render, accepted: a turn whose
 saved messages differ from what a client sends back (a cut result, the "not
 run" answers a question writes, joined questions, an answer cleaned of
-thought tags, a separator the server adds between streamed parts).
+thought tags, a separator a caller adds between streamed parts).
 
 The form is named after its API, "Chat Completions", not its vendor, since
 `tests/test_neutral.py` refuses the vendor's name as that of a test
@@ -5465,7 +5460,7 @@ lives in the state too, so a rollback puts back what it recorded.
 The count of evicted messages was worked out by subtraction in nine places,
 and a written result reported -1. Eviction now records how many went and why
 where it drops them, logs it once at `INFO` (which also makes a question with
-many calls that empties the history visible on the server, the user having
+many calls that empties the history visible to the caller, the user having
 chosen to keep the rule that whole exchanges go), and every report reads only
 that record. A result's whole cutting step, with one search for how much to
 keep, is in the cutting file.
@@ -5572,7 +5567,7 @@ A whole-project review by four fresh reviewers (458.1 to 458.33 on its page)
 found 33 issues; the user picked to fix all of them, and to refuse an add-on
 file beside the model that is not JSON (458.34). Each section below names the
 findings it answers. Measurements are Python only, on the stand-in tokenizer
-and the test templates, on the development machine; a real model's decode
+and the test templates, on the machine measured; a real model's decode
 time is not in them.
 
 ### Windows of the newest exchanges after an anchor
@@ -5627,8 +5622,8 @@ covers window-sized renders.
 ### The work after a reply runs after its stream ends
 
 458.4, 458.16. A reply's stream ended only after the evictions and the decode
-ahead of the next question, and a server that speaks a reply's last sentence
-once the stream ends spoke it that much later. A reply now marks that work
+ahead of the next question, so a caller that acts on the stream's end, such
+as one that reads the last sentence aloud, waited that much longer. A reply now marks that work
 due; the wrapper starts a thread at the stream's end that takes the lock and
 does it, and every action and `wait_idle` does a due one first, so the order
 of the work is as before. An action that waits for the lock sets an event the
@@ -5758,7 +5753,7 @@ and what changed:
   context; a reply now has the room it was generated in, as a call already had.
   An injected question is refused where its reply would have no room. A begin
   joins two questions in a row where the template writes no two, as a running
-  conversation does, so a history a server kept with both begins again.
+  conversation does, so a history kept with both begins again.
 - A shortening is read against the whole text one stream showed, the text
   before a call included. The newest exchange stays after its reply until the
   next question, while it fits the context, so a long reply can be cut.
@@ -5788,17 +5783,16 @@ and what changed:
   arguments, and is not read from a JSON key, is refused; the drop check also
   probes exchanges with calls, which a template that numbers its calls by
   place fails; every waiting action is counted, not only the first.
-- A history that kept a call's turn open before a later question, as a server
-  may record it, was refused at a begin where the template writes no call
-  without its result (found by the review's server fuzzer on the devstral-2
-  template, on a resume). The begin now closes each such turn as the question
+- A history that kept a call's turn open before a later question was refused at a begin where the template writes no call
+  without its result (found by the review's fuzzer on the devstral-2
+  template, on a begin from a saved history). The begin now closes each such turn as the question
   closed it live, decided from a render of that exchange and the question
   alone: as it stands, with each owed call told it was not run, with an empty
   reply after, or taken out and the two questions joined. Refusing it, as
-  before, blocked the resume, which rule 11 rules out.
+  before, refused a begin from a saved history, which rule 11 rules out.
 - A history whose newest reply ran until the context was full was refused at
   a begin: with its closing tag it is a few tokens over the context (6 on
-  the qwen-3 test template, found by the same fuzzer on a resume). The begin
+  the qwen-3 test template, found by the same fuzzer on a begin from a saved history). The begin
   now drops what is over the context as the work after that reply drops it
   live, the oldest exchange first. A newest turn that ends on a call is still
   refused, as dropping it would leave its call unreported.
@@ -5879,7 +5873,7 @@ as many rules as a machine can. What was built, and why each is shaped so:
   database is off and its home is the null device, so nothing is kept on disk
   (rule: nothing persists that was not asked for); a failure prints the blob
   that replays it. The suite draws 40 fixed sequences, `-m slow` 1500 new ones
-  (13 minutes on the development machine), the pre-push hook 200.
+  (13 minutes on the machine measured), the pre-push hook 200.
 - **Every order of the thread hand-over.** In place of a TLA+ model, which
   would need Java and drift from the code, `tests/test_thread_orders.py` holds
   the work after a reply at each point where it hands over (before it takes
@@ -5890,7 +5884,7 @@ as many rules as a machine can. What was built, and why each is shaped so:
   The prose test checks em dashes (in every line), dashes between clauses and
   paths of one machine. A check for measured numbers was refused: a
   measurement cannot be told from a documented default or a test value by its
-  form (the server's 25 MB upload limit, 200 ms of test speech).
+  form (a documented size limit, a test duration).
 - **Lint and type checks are tests.** ruff with E, F, W and B, line length left
   to the writer and `zip` without `strict` allowed (some calls pair sequences of
   different lengths on purpose); mypy with optional values checked. Fixing its
@@ -6026,8 +6020,8 @@ states the rule, and these are the measures.
 - **Saved turns carry a check value.** Each record of `generated_turns`
   holds a digest of everything else in it, tokens included; a record changed
   since is ignored, its turns written as the template writes them, and
-  `generated_turns_ignored` says so. The server already begins anew where
-  saved turns are refused, so records saved before this are written anew.
+  `generated_turns_ignored` says so. Records saved before this are ignored
+  in the same way, their turns written the template's way.
 - **Equal texts the template compares.** A template that compares message
   texts for equality (one writes its declarations before every user message
   equal to the newest) wrote two equal questions alike only where their
@@ -6052,9 +6046,9 @@ states the rule, and these are the measures.
   interrupted decode had left part of the cache to the next action, that
   part stays the next action's, as before.
 - **The stand-in model ships.** `FakeContext` and the invented templates
-  moved to `llama_chat.testing`, so that the server's suite can run random
-  sequences of its language model's actions on them, with `check_cache` on;
-  the server's sequences use seeded draws, since its test extras hold no
+  moved to `llama_chat.testing`, so that a caller's own suite can run random
+  sequences of its actions on them, with `check_cache` on;
+  such sequences use seeded draws, since a caller's test extras may hold no
   property-testing library. The trace tests of what a reply costs leave the
   stand-in's own frames out.
 - **Tests that script answerless replies.** The conversation tests' harness
@@ -6170,8 +6164,8 @@ tool in a way that closes this.
   an add-on file's `reasoning_on`, reaches the template.
 - **The engine keeps its own micro-batch, measured on the card** (496.3).
   The entry "The engine keeps its own micro-batch" left the card unmeasured.
-  Measured with gemma-4-26B-A4B Q4_K_M on the RTX 3090 with the server's
-  settings (context 8192, all layers on the card, q8_0 cache, flash
+  Measured with gemma-4-26B-A4B Q4_K_M on the RTX 3090 with these settings
+  (context 8192, all layers on the card, q8_0 cache, flash
   attention), a 5,221-token question and a begin of 240 messages, three runs
   each, the micro-batch set to the batch by a patch in the measuring script
   only:
@@ -6787,8 +6781,7 @@ level". `begin` takes `reasoning` (`True` or `False`, the default off) and
 switch turns reasoning off with, is never a level. `conversation()` gives
 both back. Rejected: one parameter with a reserved word (what 528.6 built),
 and a marker object in its place, which `conversation()` could not give as
-plain JSON. The server passes a request's level on where the model knows it
-(535.5A).
+plain JSON.
 
 ### After a second review
 
@@ -6808,15 +6801,12 @@ plain JSON. The server passes a request's level on where the model knows it
   generation without logits begins with.
 - An add-on file's `reasoning_levels` that the template does not take as
   levels is refused at load with the cause (rule 2), where it was dropped.
-- The server names a refused level as the request's `reasoning_effort`, and
-  falls back to the model's own way where a new conversation's template does
-  not know the level the conversation reasoned at.
 
 ### Not done this round
 
 528.20.2A asked for the three render-speed items left from the review
 (521.15 to 521.17). They change how renders are reused on the core path and
-none of them concerns the models the user runs; they are carried to the next
+none of them is needed for correctness; they are carried to the next
 round as a decision rather than built in a hurry beside the rest.
 
 ## 2026-11-20: The three render-speed findings, built

@@ -49,7 +49,7 @@ or levels the renders cannot tell apart. A second way to state them in code
 
 ## Alternatives rejected
 
-- Taking any file with the model's name: another program's settings beside
+- Taking any file with the model's name: a JSON file of another kind beside
   the GGUF stopped the model from loading.
 - An error for a JSON file that names another template: it may belong to
   something else; a warning shows without any logging configured.

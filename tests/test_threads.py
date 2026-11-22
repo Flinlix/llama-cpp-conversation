@@ -493,7 +493,7 @@ def test_a_truncation_right_after_a_reply_that_filled_the_context_decodes_nothin
 
 
 @pytest.mark.parametrize("template", [PLAIN, NUMBERED], ids=["plain", "numbered"])
-def test_a_reply_that_filled_the_context_truncated_to_what_fits_keeps_what_was_heard(
+def test_a_reply_that_filled_the_context_truncated_to_what_fits_keeps_what_reached_the_reader(
         monkeypatch, settles_in_the_background, template):
     monkeypatch.setattr(wrapper_module, "_AFTER_REPLY_PAUSE_S", 0.3)    # the truncation comes within it
     fake = FakeContext(template, replies=["Ein Satz. " * 400])

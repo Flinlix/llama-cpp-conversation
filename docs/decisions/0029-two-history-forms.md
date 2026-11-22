@@ -4,7 +4,7 @@ Date: 2026-11-20
 
 ## Context
 
-A caller, typically a server, keeps the conversation and begins again from it
+A caller may keep the conversation and begin again from it
 after a restart or a settings change. One mixed form, chat messages plus this
 library's extras, made every caller convert both ways and copy the library's
 rules, and the turns kept as generated were lost on every restart, since no
@@ -18,7 +18,7 @@ template writes them back exactly.
   `assistant` with text, or `null` where it only calls; `tool` with its
   `tool_call_id`; every call with an id and its arguments as a JSON string.
   `reasoning_content` is the one field beyond the official form, the name
-  other compatible servers use. A result is text; a value from tool code is
+  compatible servers use. A result is text; a value from tool code is
   written as JSON at once.
 - Only the smallest part of the form is taken: a list of content parts, the
   `developer` role, `name`, `refusal`, `audio` and a `custom` call are
@@ -54,8 +54,8 @@ template writes them back exactly.
 
 ## Consequences
 
-- A server begins again from its own list of messages, appended to and
-  trimmed, without losing exact turns.
+- A caller that keeps its own list of messages, appending to it and trimming
+  it, begins again from it without losing exact turns.
 - Turns whose saved messages differ from what a client sends back fall back
   to the template's render. Measured: a begin with 400 saved turns over 1,600
   messages matched them in about 0.02 s, against 3.4 to 6.8 s before the
@@ -63,8 +63,8 @@ template writes them back exactly.
 
 ## Alternatives rejected
 
-- One mixed form: the server's copy of the unreadable-call rule had drifted,
-  and a saved turn with a thought was never found.
+- One mixed form: every caller had to copy the unreadable-call rule, and a
+  copy can drift; a saved turn with a thought was never found.
 - `(role, text)` pairs and a step form of tool turns: second ways to write a
   history.
 - One sealed record of the whole conversation: lost by any edit a client makes.

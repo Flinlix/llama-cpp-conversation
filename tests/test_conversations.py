@@ -2362,7 +2362,7 @@ def test_a_history_that_keeps_a_turn_open_before_a_question_begins_as_the_questi
     live = _Run(stem)
     live.begin(called, tools=[WEATHER])
     live.chat.reply(QUESTIONS[0]).finish()
-    # A record that kept the turn as it was asked, as a server may keep it: written as given
+    # A record that kept the turn as it was asked: written as given
     # where the template writes it so, else as the question closed it live.
     record = called + [{"role": "user", "content": QUESTIONS[0]},
                        {"role": "assistant", "content": ANSWERS[0]}]
@@ -2657,7 +2657,7 @@ def test_a_call_still_owed_begins_again_with_its_turn_as_generated_and_its_resul
 @pytest.mark.parametrize("cache", sorted(_COST_CACHES))
 @pytest.mark.parametrize("stem", _EVERY)
 def test_a_reply_shortened_after_evictions_renders_only_the_newest_exchanges(stem, cache):
-    """A barge-in after the conversation reached its threshold: what the eviction left in place still serves the window."""
+    """A reply cut short after the conversation reached its threshold: what the eviction left in place still serves the window."""
     probe = _Run(stem)
     probe.begin()
     # The opening and room for about a dozen exchanges under the threshold.
