@@ -27,8 +27,9 @@ with the reply.
 - Where a decode returns only once it is done (`decode_blocks`: the processor
   alone), a token's text is yielded first and the token decoded before the
   next draw or the stream's end. On a GPU, where a decode only queues the
-  work, the order stays. A token shown is in the cache before the stream
-  yields again.
+  work, the order stays, except for a generation's first token: the first
+  decode after the prompt's waits for its work, so that token is shown first
+  as well. A token shown is in the cache before the stream yields again.
 - Where a reply goes on with an open turn, it reads what the model wrote in
   that turn so far and starts with a blank line where the two texts would
   join without whitespace; one function says what a stream shows between two
@@ -47,6 +48,9 @@ with the reply.
   the profiler before, 0.9 s after. A test counts bytecode steps per token,
   which does not depend on the machine.
 - On the processor the first word comes one decode earlier.
+- Measured on 2026-11-21 on an RTX 3090: before the first token was shown
+  first, the first visible word waited 9 ms for its own decode on Gemma 4 26B
+  A4B and 3 ms on Gemma 4 E2B; shown first, the gap is 0.1 ms.
 
 ## Alternatives rejected
 

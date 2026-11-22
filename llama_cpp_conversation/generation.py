@@ -287,7 +287,8 @@ def _sample_into(context: CacheContext, draws: _Draws, start_pos: int,
         return context.ends_generation(token) or (ends_turn is not None and ends_turn(token))
 
     # Where a decode returns only once done, a token's text is shown first and the token
-    # decoded before the next draw, which needs its logits.
+    # decoded before the next draw, which needs its logits; so is a generation's first token,
+    # whose decode waits on any device. See docs/decisions/0046-a-reply-streams-each-token-as-soon-as-it-can.md.
     shows_first = context.decode_blocks
     shown: list[int] = []               # the token shown and not decoded yet
 
@@ -358,7 +359,7 @@ def _sample_into(context: CacheContext, draws: _Draws, start_pos: int,
             context.prefill([tok], pos, want_logits=False)
             generated.ends_with_logits = False
             pos += 1
-        elif shows_first:
+        elif shows_first or pos == start_pos:
             shown.append(tok)
         else:
             context.decode_generated([tok], pos)

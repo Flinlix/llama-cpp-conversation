@@ -307,6 +307,18 @@ def test_where_a_decode_blocks_each_token_is_shown_before_it_is_decoded_and_deco
     assert "".join(d for d, _ in held) in fake.text_of(fake.cache)
 
 
+def test_where_a_decode_does_not_block_only_the_first_token_is_shown_before_it_is_decoded():
+    fake = FakeContext(PLAIN, ["Hallo Welt"], decode_blocks=False)
+    chat = ChatWrapper(Config(), context=fake)
+    chat.begin([{"role": "system", "content": "S"}])
+    held = [(delta, fake.text_of(fake.cache)) for delta in chat.reply("Frage")]
+    shown = ""
+    for i, (delta, cache) in enumerate(held):
+        shown += delta
+        # The first piece reaches the reader before its decode, every later one after its own.
+        assert cache.endswith(shown) == (i > 0)
+
+
 @pytest.mark.parametrize("cap, closed_at", [(1, 2), (3, 4), (6, 7), (20, None), (None, None)])
 def test_a_thought_that_reaches_its_cap_is_closed_there_and_the_answer_follows(cap, closed_at):
     # The opening tag is the thought's first token; ``cap`` tokens inside it pass before the

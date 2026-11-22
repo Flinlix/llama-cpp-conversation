@@ -322,9 +322,10 @@ def test_only_text_that_could_begin_a_stop_string_is_held_back():
     w.begin(opened("s"))
     starts = []
     fake.before_reply = lambda text: starts.append(len(fake.cache))
-    # Each delta, and how many tokens had been generated when it came.
+    # Each delta, and how many tokens the cache held of the reply when it came: the first
+    # token is shown before its decode.
     shown = [(delta, len(fake.cache) - starts[0]) for delta in w.reply("hi", stop=["STOP", "lo"])]
-    assert shown == [("h", 1), ("e", 2), ("S", 4), ("l", 5)]
+    assert shown == [("h", 0), ("e", 2), ("S", 4), ("l", 5)]
 
 
 def test_the_stop_texts_are_the_ones_given_when_the_reply_was_asked_for():
