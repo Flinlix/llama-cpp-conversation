@@ -91,8 +91,9 @@ That reading happens in the work after a reply, while the reply is read or
 spoken, so the wait before the next first word does not change. These do:
 
 - An action that comes during that work waits for the rest of it. Truncating
-  the last reply right after it ended, as when the listener interrupts speech
-  at once, is such an action. On any cache that cannot shift, a question asked
+  the last reply before that work began, as when the listener interrupts
+  speech at once, does not wait: the work then runs on the truncated reply. On
+  any cache that cannot shift, a question asked
   while the kept history is read again waits for that reading, since it needs
   the history.
 - Truncating the last reply by more than the window layers keep beyond their

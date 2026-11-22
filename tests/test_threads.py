@@ -1,5 +1,6 @@
 """Rule 9: actions take turns, a reply asked for while another runs waits for no lock, a cancel from elsewhere stops a reply, and closing ends what the closing thread reads."""
 
+import contextlib
 import threading
 
 import pytest
@@ -17,7 +18,7 @@ from llama_cpp_conversation.generation import generate
 from tests import internals
 from tests.chat_messages import opened
 from llama_cpp_conversation.testing.fake_context import FakeContext
-from llama_cpp_conversation.testing.invented_templates import PLAIN, TOOLS
+from llama_cpp_conversation.testing.invented_templates import NUMBERED, PLAIN, REASONING, TOOLS
 from llama_cpp_conversation.tool_registry import ToolRegistry
 from llama_cpp_conversation.tools import ToolCall, ToolSpec
 from tests.wrappers import add_tools, assert_consistent, numbered_exchanges, tool_wrapper, rows
@@ -453,6 +454,71 @@ def test_a_begin_right_after_a_reply_decodes_only_the_conversation_it_begins(
     before = fake.total_prefilled()
     chat.begin([{"role": "system", "content": "andere"}])
     assert fake.total_prefilled() - before == len(internals.held_tokens(chat))
+
+
+def test_a_truncation_right_after_a_reply_does_not_first_do_the_work_the_reply_left(
+        monkeypatch, settles_in_the_background):
+    """The work after the reply, which writes the reply as a past one, runs on the truncated reply instead."""
+    reply = "<thought>" + "Ich denke nach. " * 10 + "</thought>" + "Antwort " * 10
+
+    def decoded(truncates: bool) -> int:
+        """What the action right after the reply decodes: a truncation, else the wait for that work."""
+        fake = FakeContext(REASONING, replies=[reply])
+        chat = ChatWrapper(Config(context_size=4000), context=fake)
+        chat.begin([{"role": "system", "content": "s"}], reasoning=True)
+        text = chat.reply("Frage").finish().text
+        before = fake.total_prefilled()
+        chat.truncate_last_reply(text[:8]) if truncates else chat.wait_idle()
+        decoded = fake.total_prefilled() - before
+        chat.wait_idle()
+        return decoded
+
+    monkeypatch.setattr(wrapper_module, "_AFTER_REPLY_PAUSE_S", 0.3)    # the truncation comes within it
+    assert decoded(truncates=True) < decoded(truncates=False)
+
+
+@pytest.mark.parametrize("template", [PLAIN, NUMBERED], ids=["plain", "numbered"])
+def test_a_truncation_right_after_a_reply_that_filled_the_context_decodes_nothing_past_it(
+        monkeypatch, settles_in_the_background, template):
+    """The work after such a reply drops it, as it does not fit the context written as a past one: the truncation does that first."""
+    monkeypatch.setattr(wrapper_module, "_AFTER_REPLY_PAUSE_S", 0.3)    # the truncation comes within it
+    fake = FakeContext(template, replies=["Ein Satz. " * 400])
+    chat = ChatWrapper(Config(context_size=2048), context=fake)
+    chat.begin([{"role": "system", "content": "s"}])
+    text = chat.reply("Erzähl.", max_reply_tokens=5000).finish().text
+    with contextlib.suppress(OutOfOrderError):
+        chat.truncate_last_reply(text[:-1])
+    chat.wait_idle()
+    assert max(start + n for start, n, _ in fake.prefill_calls) <= 2048
+
+
+@pytest.mark.parametrize("template", [PLAIN, NUMBERED], ids=["plain", "numbered"])
+def test_a_reply_that_filled_the_context_truncated_to_what_fits_keeps_what_was_heard(
+        monkeypatch, settles_in_the_background, template):
+    monkeypatch.setattr(wrapper_module, "_AFTER_REPLY_PAUSE_S", 0.3)    # the truncation comes within it
+    fake = FakeContext(template, replies=["Ein Satz. " * 400])
+    chat = ChatWrapper(Config(context_size=2048), context=fake)
+    chat.begin([{"role": "system", "content": "s"}])
+    text = chat.reply("Erzähl.", max_reply_tokens=5000).finish().text
+    chat.truncate_last_reply(text[:40])
+    chat.wait_idle()
+    assert chat.conversation()["messages"][-1]["content"] == text[:40]
+    assert max(start + n for start, n, _ in fake.prefill_calls) <= 2048
+
+
+def test_a_truncation_after_close_while_the_work_after_a_reply_waits_reads_nothing(
+        monkeypatch, settles_in_the_background):
+    monkeypatch.setattr(wrapper_module, "_AFTER_REPLY_PAUSE_S", 5.0)
+    fake = FakeContext(PLAIN, replies=["Hallo Welt, wie geht es?"])
+    chat = ChatWrapper(Config(), context=fake)
+    chat.begin([{"role": "system", "content": "s"}])
+    text = chat.reply("Frage").finish().text
+    chat.close()
+    measured = []
+    monkeypatch.setattr(RenderedCache, "fits_the_context", lambda self, kept: measured.append(kept))
+    with pytest.raises(OutOfOrderError, match="closed"):
+        chat.truncate_last_reply(text[:5])
+    assert measured == []                               # nothing rendered on the freed model
 
 
 def test_a_reader_during_an_eviction_sees_only_finished_conversations(monkeypatch):

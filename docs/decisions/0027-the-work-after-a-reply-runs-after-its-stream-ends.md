@@ -35,8 +35,16 @@ later.
   (found by review on 2026-11-21: a begin within the pause decoded 1,415 tokens
   of the conversation it left, then threw them away). A begin brings the cache
   up first only where the conversation it leaves is kept whole.
+- `truncate_last_reply` does not do that work first: the work then runs on
+  the truncated reply. Done first, it decoded the reply again in the form a
+  past reply takes, only for the truncation to cut it away.
 
 ## Consequences
+
+- Measured on 2026-11-21 on an RTX 3090 with Gemma 4 26B A4B: truncating
+  right after a reply took 29.7 ms with the work done first and 9.5 ms
+  without it; with the compact window cache and a 440-token reply it had
+  taken 98 ms.
 
 - The rule that the cache is the render allows the cache to hold less than
   the render until the interrupting action decodes the rest, before the model

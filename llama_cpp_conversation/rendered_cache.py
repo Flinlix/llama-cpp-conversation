@@ -556,6 +556,16 @@ class RenderedCache:
         """Whether a reply left the work after it to do: the evictions and the decode ahead of the next question."""
         return self._settle_due
 
+    def fits_the_context(self, keep_text: str) -> bool:
+        """Whether the conversation, its newest reply written as a past one and its text cut to ``keep_text``, fits the context, which the work after a reply otherwise makes it.
+
+        A thought the reply holds is counted whole, so a reply that fits so fits truncated.
+        """
+        messages = self._state.messages
+        if messages and messages[-1]["role"] == "assistant" and not messages[-1].get("tool_calls"):
+            messages = messages[:-1] + [{**messages[-1], "content": keep_text}]
+        return self._targets.length(messages, generation_prompt=False) <= self._config.context_size
+
     def settle(self, interrupt: Interrupt | None = None, question: str | None = None,
                reply_tokens: int = 0) -> None:
         """Do the work a reply left, where it left any: drop what is over the limits, then render and decode ahead for the next question.

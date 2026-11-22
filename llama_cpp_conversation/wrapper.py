@@ -757,12 +757,16 @@ class ChatWrapper:
                 than its text, such as a call that went for want of room.
         """
         ensure_text(keep_text, "keep_text", "keep_text")
-        with self._held():
+        with self._held(settles=False):
             self._ensure_open()
             messages = self._conversation.messages
             if messages and messages[-1]["role"] == "assistant":
                 keep_text = _kept_of_the_newest(_shown_before(messages), messages[-1]["content"],
                                                 keep_text)
+            # The work the reply left runs after the truncation, on the truncated reply, unless
+            # the conversation does not fit the context even with the reply truncated.
+            if self._conversation.settle_due and not self._conversation.fits_the_context(keep_text):
+                self._settle_due_work(_AN_ACTION_WAITS)
             self._conversation.truncate_last_reply(keep_text)
 
     # ----- introspection -------------------------------------------------------
