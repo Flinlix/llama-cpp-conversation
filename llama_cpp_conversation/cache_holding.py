@@ -89,15 +89,16 @@ class CacheHolding:
             self._memory.pin([], "opening")
             return
         system = system_part(self._state.messages)
-        places = {self._rendering.opening_length(system)}
+        opening = self._rendering.opening_length(system)
+        # Neither is kept within a few tokens of the start or of the opening's state, from
+        # which going back there decodes them instead.
+        places = {opening} if opening > _NEAR_STATE_TOKENS else set()
         asked = system + [{"role": "user", "content": STAND_IN}]
         split = self._rendering.split(asked, generation_prompt=True)
         run = self._rendering.run_start(split, len(asked) - 1, 0) if split is not None else None
         if run is not None:
             ahead = len(self._rendering.target(asked, True, upto=run).tokens)
-            # Not kept within a few tokens of the opening's state, from which going back there
-            # decodes them instead.
-            if ahead - min(places) > _NEAR_STATE_TOKENS:
+            if ahead - (opening if places else 0) > _NEAR_STATE_TOKENS:
                 places.add(ahead)
         self._memory.pin(sorted(places), "opening")
 

@@ -558,7 +558,8 @@ def test_an_eviction_on_a_cache_that_cannot_shift_goes_back_to_before_the_oldest
         if evictions == 2:
             break
     assert evictions == 2
-    assert run.context.resets == resets
+    # An opening within a few tokens of the start is decoded again from there instead.
+    assert run.context.resets == resets or not internals.opening_is_kept(run.chat)
     if tools is None:
         _assert_each_reply_followed_what_was_sent(run, asked)
 

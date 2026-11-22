@@ -19,6 +19,15 @@ def token_id_range() -> range:
 
 
 # ----- the tokens the wrapper holds the cache to be ----------------------------------
+def opening_is_kept(wrapper) -> bool:
+    """Whether a state is kept where the conversation's opening ends, which an opening within a few tokens of the start is not."""
+    from llama_cpp_conversation.cache_holding import _NEAR_STATE_TOKENS
+    from llama_cpp_conversation.messages import system_part
+    conversation = wrapper._conversation
+    return conversation._rendering.opening_length(
+        system_part(conversation._state.messages)) > _NEAR_STATE_TOKENS
+
+
 def held_tokens(wrapper) -> list[int]:
     """The tokens the wrapper holds the cache to be; ``total_tokens`` is their count."""
     return list(wrapper._conversation._memory.tokens)

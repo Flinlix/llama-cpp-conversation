@@ -482,7 +482,11 @@ class CacheSync:
         self._template_written = written           # the same tokens, decoded again
 
     def _reset_to_nothing(self) -> None:
-        self._context.reset()
+        try:
+            self._context.reset()
+        except BaseException:
+            self._end = None                # what the cache holds after a failed reset is not known
+            raise
         self._valid, self._end, self._rest_states, self._pinned, self._at_cuts = 0, 0, [], {}, []
 
     def _restore_to(self, pos: int) -> bool:

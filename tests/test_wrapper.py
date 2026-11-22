@@ -1125,6 +1125,7 @@ _PLAIN_REPLY_CODE = {
         "CacheSync._forget_states_after",
         "CacheSync._interrupted",
         "CacheSync._pins_to_save",
+        "CacheSync._reset_to_nothing",
         "CacheSync._restore_to",
         "CacheSync._restore_to.<locals>.<lambda>",
         "CacheSync._save_pinned_state",

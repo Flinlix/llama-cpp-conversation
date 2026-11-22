@@ -24,8 +24,10 @@ before the first word delays the answer.
     template whose past reply does not stand as its generation prompt left it,
     `writes_reply_as_prompted`);
   - where a generation starts and where a first question's run starts.
-  None is pinned inside the system turn. A state saved where another is asked
-  for serves both. A cache that cannot cut saves one state per reply, where
+  None is pinned inside the system turn, and none within 32 tokens
+  (`_NEAR_STATE_TOKENS`) of the start or of the state kept where the opening
+  ends: going back there decodes those tokens instead. A state saved where
+  another is asked for serves both. A cache that cannot cut saves one state per reply, where
   its question's text ends.
 - A state is saved into a buffer that no kept state refers to, of its size,
   where one is there; at most one such spare is kept.
@@ -42,6 +44,14 @@ before the first word delays the answer.
   tokens).
 - Measured: saving 64 MB into a new buffer took 31.5 ms, into a
   reused one 5.1 ms.
+- Measured on 2026-11-21 on Qwen 3.5 9B (RTX 3090, context 8192): each state
+  takes 50.25 MiB, and a 17-token system turn had one of its own before the
+  bound of 32 tokens applied to it. The bound weighs one state's RAM against
+  decoding at most 32 tokens again. Going back to the opening is followed by
+  decoding the rest of the conversation, hundreds to thousands of tokens, so
+  the 32 add about 1 to 3 percent to that decode; they take about 50 ms at the
+  594 tokens per second record 0014 gives for an i9-9900K's processor alone
+  (both estimated). It was not measured on a Raspberry Pi.
 
 ## Alternatives rejected
 
