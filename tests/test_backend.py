@@ -1159,3 +1159,28 @@ def test_a_whole_state_saved_while_a_shift_waits_decodes_the_newest_token_again_
     del calls[:]
     assert ctx.save_whole_state() == b"state"
     assert calls == ([("rm", 299, -1), ("decode", [399], 299)] if shifted else []) + [("save",)]
+
+
+def test_the_engine_is_asked_for_one_row_of_logits_per_decode_where_the_binding_has_the_setting(
+        monkeypatch):
+    made = []
+    backend = Backend()
+    monkeypatch.setattr(backend, "_new_ctx", lambda model, params: made.append(params) or "ctx")
+    backend.new_context("model", 64, None, 8)
+    params, = made
+    assert not hasattr(params, "n_outputs_max") or params.n_outputs_max == 1
+
+
+def test_a_decode_asks_for_the_logits_of_its_last_token_at_most(monkeypatch):
+    """The engine is asked for one row of logits per decode, so no decode may ask for more."""
+    asked = []
+    backend = Backend()
+    monkeypatch.setattr(backend, "_llama_cpp", SimpleNamespace(
+        llama_batch_init=lambda n, embd, seqs: SimpleNamespace(
+            token=[0] * n, pos=[0] * n, n_seq_id=[0] * n, seq_id=[[0] for _ in range(n)],
+            logits=[0] * n, n_tokens=0),
+        llama_decode=lambda ctx, batch: asked.append(sum(batch.logits[:batch.n_tokens])) or 0,
+        llama_batch_free=lambda batch: None))
+    for n, batch, logits in [(1, 8, True), (20, 8, True), (20, 8, False), (8, 8, True)]:
+        backend.decode("ctx", list(range(n)), 0, 0, logits, batch)
+    assert asked and max(asked) <= 1

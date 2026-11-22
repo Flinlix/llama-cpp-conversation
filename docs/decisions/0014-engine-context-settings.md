@@ -27,6 +27,11 @@ defaults departed from llama.cpp's without a reason, and one setting
 - `gpu_layers` defaults to `-1`, all layers, as llama.cpp does; a model larger
   than the card fails at load with the engine's cause. `gpu_layers=0` loads
   with an empty device list, so llama.cpp uses no GPU at all.
+- The context asks llama.cpp for one row of logits per decode
+  (`n_outputs_max`), where the binding has that setting: every decode asks for
+  the logits of its last token at most. llama.cpp would otherwise reserve a row
+  for every token of a micro-batch, and would stop the process if a decode
+  ever asked for more than the limit.
 - The context registers a finalizer when it loads, which frees the engine
   context and then the model when the context is collected, and which
   `close()` runs at once; the engine is freed exactly once. A construction
@@ -34,6 +39,11 @@ defaults departed from llama.cpp's without a reason, and one setting
   left open, since the caller holds it.
 
 ## Consequences
+
+- Measured on 2026-11-21 on an RTX 3090: one row of logits instead of a
+  micro-batch's took the device's compute buffer from 543.6 to 152.6 MiB at
+  the server's settings with Gemma 4 26B A4B, 390 MiB less, and 470 MiB less
+  with Gemma 4 E2B; 13 of 13 greedy replies were the same.
 
 - Measured before the unified cache, engine alone at 6,000 tokens deep: 103.4
   tokens/s on the GPU without it, 118.6 with it (the windowed cache gave

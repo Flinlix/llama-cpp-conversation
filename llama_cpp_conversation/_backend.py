@@ -219,6 +219,10 @@ class Backend:
         # A window's layers hold their window alone, so the cache cannot shift. See
         # docs/decisions/0059-a-compact-cache-for-sliding-window-layers.md.
         cparams.swa_full = not compact_window_cache
+        # One row of logits per decode, the most a decode here asks for. See
+        # docs/decisions/0014-engine-context-settings.md.
+        if hasattr(cparams, "n_outputs_max"):
+            cparams.n_outputs_max = 1
         if type_k is not None:
             cparams.type_k = type_k
         if type_v is not None:
