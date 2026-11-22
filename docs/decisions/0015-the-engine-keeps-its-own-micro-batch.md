@@ -39,7 +39,21 @@ of 240 messages, three runs each:
 | 2048 | 5,298 to 6,051 tok/s | 0.86 to 0.99 s | 1.60 s | 19,966 MiB |
 
 On the card a larger micro-batch reads a long question 13 to 15 percent
-faster and takes 564 or 1,692 MiB more.
+faster and takes 564 or 1,692 MiB more. These peaks were measured before the
+context asked for one row of logits per decode (0014), which takes 390 MiB
+less at 512 on this model; at 1,024 the card then held 17,408 MiB against
+17,576 MiB at 512 before.
+
+Measured on 2026-11-21 on the same card, a 4,000-token prefill:
+
+| Model | Micro-batch 512 | Micro-batch 2048 |
+|---|---|---|
+| gemma-4-26B-A4B | 5,214 to 5,320 tok/s | 6,741 to 6,787 tok/s, 29 percent faster |
+| gemma-4-E2B | 27,955 to 28,144 tok/s | 25,816 to 26,245 tok/s, 7 percent slower |
+
+Generation was the same at either size. Since a larger micro-batch reads
+faster on one model and slower on another, no single value suits every model,
+and the default stays the engine's.
 
 ## Alternatives rejected
 
