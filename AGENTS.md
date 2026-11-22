@@ -54,9 +54,10 @@ names the tests that try to break it.
    - `tests/test_model_sampling.py`, `tests/test_real_templates.py`: every
      shipped add-on file is read as a load reads it, for a template the tests
      run.
-   - `tests/test_neutral.py`: no other file names a family or a publisher of
-     the test templates or the add-on files, and the README's list of
-     supported models is the table the test templates' files give.
+   - `tests/test_neutral.py`: no other file names, in its text or its own
+     name, a family or a publisher of the test templates or the add-on
+     files, and the README's list of supported models is the table the test
+     templates' files give.
 4. **The memory rolls.** No action decodes more as the conversation grows,
    on any kind of cache; where a cache cannot shift, or the template writes
    the rest otherwise once the oldest exchange goes (as one that numbers its
@@ -73,18 +74,21 @@ names the tests that try to break it.
      a cache that cannot shift is decoded again only every few turns; on the
      compact window cache with a margin of 256 tokens, on every template whose
      tool turns rewrite no further back than that.
+   - `tests/test_wrapper.py`: a template that writes only the newest messages
+     is refused at load.
 5. **Only a template that needs something pays for it.** What only some
    templates need is read once at load, or stated in the add-on file, and no
    question, reply or token of another template pays for it.
    Verified by:
    - `tests/test_wrapper.py`: a reply on a template without reasoning, tools
-     or a clock runs only the functions listed as serving every template.
+     or a clock runs only the functions listed as serving every template, and
+     what keeps an answer from ending early is worked out once per template.
 6. **A failed or refused action leaves the conversation and the cache as they
    were, and usable.**
    Verified by:
-   - `tests/test_failures.py`: every action, failing at any point, on every
-     kind of cache, leaves them as they were, a failed reply keeping only
-     what it had produced.
+   - `tests/test_failures.py`: every action, failing at any point, the
+     tokenizer included, on every kind of cache, leaves them as they were, a
+     failed reply keeping only what it had produced.
 7. **Every call the model makes is answered and reported**, and its turn
    closes, or waits for results until a new question closes it; where no
    room is left to answer, the turn closes on what the model wrote, each call
@@ -94,7 +98,8 @@ names the tests that try to break it.
    Verified by `tests/test_reasoning.py` and `tests/test_generation.py`.
 9. **Safe from any thread:** actions take turns, readers see a finished copy,
    a reply can be cancelled from elsewhere.
-   Verified by `tests/test_threads.py` and `tests/test_tool_loop.py`.
+   Verified by `tests/test_threads.py`, a reader during an eviction included,
+   and `tests/test_tool_loop.py`.
 10. **Beginning again from `conversation()` gives the same conversation.**
     `begin(**chat.conversation())` holds the same messages, the system message
     among them, tools and reasoning setting, each message unchanged and in its
@@ -109,20 +114,23 @@ names the tests that try to break it.
     - `tests/conftest.py`: after every test, what `conversation()` gives is
       taken by `begin`, and the conversation is its Chat Completions messages
       with each generated turn put back.
-11. **Every question gets a reply.** After load, every question gets a
-    reply; every error is a library error that names the argument and the
-    cause, and it changes nothing; no state is reachable in which the model
-    is ready but cannot answer. After any action, a question to a begun
-    conversation is answered: an open turn is closed first, and a question
-    after an unanswered one joins it where the template writes no two in a
-    row, and where the two joined do not fit, the unanswered one goes and the
-    question is asked alone. A question too long for the room the system
-    prompt leaves under the eviction threshold keeps as much of its end as
-    fits, possibly none of it, its beginning cut, with a warning logged. A
-    reply holds at least one token of answer or a call, and a thought is
-    closed in time to leave the answer its room. A question is refused only
-    where the template does not write that question as its text; the refusal
-    leaves the next question free.
+    - `tests/test_reasoning.py`: a conversation at each reasoning level begins
+      again at it.
+11. **Every question gets a reply.** After load, every question gets a reply;
+    every error is a library error that names the argument and the cause, and
+    it changes nothing; no state is reachable in which the model is ready but
+    cannot answer. After any action, a question to a begun conversation is
+    answered: an open turn is closed first, and a question after an unanswered
+    one joins it where the template writes no two in a row, and where the two
+    joined do not fit, the unanswered one goes and the question is asked
+    alone. A question too long for the room the system prompt leaves under the
+    eviction threshold keeps as much of its end as fits, possibly none of it,
+    its beginning cut, with a warning logged. A reply holds at least one token
+    of answer or a call, unless `min_answer_tokens` is `None` or its cap
+    leaves no room for one beside a thought the generation prompt already
+    opened; a thought is closed in time to leave the answer its room. A
+    question is refused only where the template does not write that question
+    as its text; the refusal leaves the next question free.
     Verified by:
     - `tests/test_failures.py`: every state the failure sweep reaches is
       followed at once by a question, which is answered.
@@ -136,12 +144,15 @@ names the tests that try to break it.
       library's errors, a fault inside it raised as `InternalError`.
     - `tests/conftest.py`: every error the library makes during a test says
       what went wrong.
+    - `tests/test_reasoning.py`: a reply under a cap of 2 to 4 tokens with
+      reasoning on still answers.
 12. **Every loop ends.** Each pass of a loop makes a measure smaller, or the
     loop takes the steps of an iterator; a pass that makes none raises
     `InternalError` naming the loop, instead of running on.
     Verified by `tests/test_loops.py`: every `while` loop of the library
     gives its measure at the start of each pass, or is one of the forms that
-    end by construction.
+    end by construction, and every function that calls itself is listed with
+    the bound on its depth.
 
 ## Tests
 
