@@ -50,6 +50,10 @@ names the tests that try to break it.
    `docs/decisions/`, the README's install section and its list of supported
    models, and the install files (`install.sh`, `pyproject.toml`); llama.cpp
    and llama-cpp-python may be named in any file.
+   No file names a program built on this library or the deployment it runs in;
+   a caller is named by its kind, such as a server or a client.
+   A decision record may name the machine a measurement ran on, and a kind of
+   use, such as a spoken conversation, may serve as an example.
    Verified by:
    - `tests/test_model_sampling.py`, `tests/test_real_templates.py`: every
      shipped add-on file is read as a load reads it, for a template the tests
@@ -58,6 +62,8 @@ names the tests that try to break it.
      name, a family or a publisher of the test templates or the add-on
      files, and the README's list of supported models is the table the test
      templates' files give.
+   - `tests/test_prose.py`: no file names one program built on the library,
+     only a kind of caller.
 4. **The memory rolls.** No action decodes more as the conversation grows,
    on any kind of cache; where a cache cannot shift, or the template writes
    the rest otherwise once the oldest exchange goes (as one that numbers its
