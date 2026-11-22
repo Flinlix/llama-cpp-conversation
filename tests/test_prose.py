@@ -1,4 +1,4 @@
-"""The project's prose keeps the writing rules a machine can check: no em dash anywhere, no dash between clauses, and outside the decision records no path of one machine.
+"""The project's prose keeps the writing rules a machine can check: no em dash anywhere, no dash between clauses, outside the decision records no path of one machine, and no file names one program built on the library.
 
 Prose is the Markdown outside code blocks and code spans, and the docstrings
 and comments of the Python files.
@@ -7,6 +7,7 @@ and comments of the Python files.
 import ast
 import io
 import re
+import subprocess
 import sys
 import tokenize
 from pathlib import Path
@@ -23,6 +24,15 @@ _EM_DASH = re.compile("\u2014")
 _CLAUSE_DASH = re.compile(r"\w\s(?:-|--|–)\s\w")
 _MACHINE_PATH = re.compile(r"(?:/home/|/tmp/|/Users/|[A-Z]:\\\\)")
 _CODE_SPAN = re.compile(r"``?[^`]*``?")
+# A caller is named by its kind, such as a server; a determiner or an owner before the word
+# makes it one program, and an owner before its settings one deployment.
+_OWNER = r"(?:user|owner)s?['\u2019]s?"
+_ONE_PROGRAM = re.compile(rf"\b(?:(?:the|that|this|our|my|{_OWNER})\s+(?:server|service)\b"
+                          rf"|{_OWNER}\s+(?:production|own)\s+(?:settings|server|machines?)\b"
+                          r"|the\s+user\s+runs\b|in\s+production\b)",
+                          re.IGNORECASE)
+# A line break and the comment mark that opens the next line, which a name may span.
+_COMMENT_BREAK = re.compile(r"(?<=\n)[ \t]*#[ \t]*")
 
 
 def _prose_files():
@@ -77,6 +87,45 @@ def _breaks(path: Path) -> list[str]:
                          ids=[str(p.relative_to(_ROOT)) for p in _prose_files()])
 def test_the_prose_keeps_the_writing_rules(path):
     assert _breaks(path) == []
+
+
+def _tracked_files() -> list[Path]:
+    """Every file git tracks in the project, hidden and suffixless ones included."""
+    listed = subprocess.run(["git", "-C", str(_ROOT), "ls-files", "-z"], capture_output=True)
+    if listed.returncode != 0:
+        pytest.skip("the project is not a git checkout, so its tracked files are not known")
+    return [_ROOT / name for name in listed.stdout.decode().split("\0") if name]
+
+
+def _programs_named(path: Path) -> list[str]:
+    """Where ``path`` names one program built on the library instead of a kind of caller, a line break inside the name included."""
+    try:
+        text = path.read_text()
+    except (UnicodeDecodeError, FileNotFoundError):
+        return []                       # not text, or deleted and not yet committed
+    text = _COMMENT_BREAK.sub("", text)  # the lines stay where they were
+    return [f"{path.relative_to(_ROOT)}:{text.count(chr(10), 0, match.start()) + 1}: one program named"
+            for match in _ONE_PROGRAM.finditer(text)]
+
+
+def test_no_file_names_a_program_built_on_the_library():
+    assert [line for path in _tracked_files() for line in _programs_named(path)] == []
+
+
+def test_a_program_named_is_found_and_a_kind_of_caller_is_not(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys.modules[__name__], "_ROOT", tmp_path)
+    server, owners, production = "ser" + "ver", "own" + "er\u2019s", "produc" + "tion"
+    named = [f"Measured at the {server}'s settings.", f"Through the {owners}\n{server}.",
+             f"That {server} injects.", f"The user's {server} starts empty.",
+             f"Tried on the user's {production} settings.", f"As the {'ser' + 'vice'} does.",
+             f"# as the model the user {'ru' + 'ns'} does,", f"  # as one does in {production}.",
+             f"# kept by the\n    # {server}."]
+    kinds = [f"A {server} keeps its ids.", "A client sends it.", "The stack of a thread.",
+             "A service the process runs in."]
+    sample = tmp_path / "pre-push"
+    sample.write_text("\n".join(kinds + named) + "\n")
+    found = [int(line.split(":")[1]) for line in _programs_named(sample)]
+    assert found == [5, 6, 8, 9, 10, 11, 12, 13, 14]
 
 
 def test_each_break_of_the_writing_rules_is_found(tmp_path, monkeypatch):
