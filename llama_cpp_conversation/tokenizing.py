@@ -114,13 +114,19 @@ def tokenize_pieces(reader: Tokenizer, pieces: list[tuple[str, bool]], *,
 
 
 class MemoTokenizer:
-    """A model's tokenizer that remembers, up to a bound in entries and in characters, what it tokenized, and each token's text and whether it is a tag."""
+    """A model's tokenizer that remembers, up to a bound in entries and in characters, what it tokenized, and each token's text and whether it is a tag.
+
+    See docs/decisions/0004-the-library-renders-the-template.md.
+    """
 
     _BOUND = 20000                  # entries kept before the memory starts over
-    _BOUND_CHARS = 4_000_000        # characters of text kept, with their tokens, before it does
+    _CHARS_PER_CONTEXT_TOKEN = 120  # characters of text kept, with their tokens, before it does,
+    _BOUND_CHARS = 4_000_000        # and at most this many whatever the context
 
-    def __init__(self, reader: ModelReader) -> None:
+    def __init__(self, reader: ModelReader, context_size: int) -> None:
         self._reader = reader
+        self._context_size = context_size
+        self._bound_chars = min(self._CHARS_PER_CONTEXT_TOKEN * context_size, self._BOUND_CHARS)
         self._known: dict = {}
         self._chars = 0
         # Each token's text and whether it is a tag, at most one entry per token of the vocabulary.
@@ -132,9 +138,9 @@ class MemoTokenizer:
         if key in self._known:
             return self._known[key]
         tokens = self._reader.tokenize(text, add_special=add_special, parse_special=parse_special)
-        if len(text) > self._BOUND_CHARS:
-            return tokens                   # longer than all it may keep: not kept
-        if len(self._known) > self._BOUND or self._chars + len(text) > self._BOUND_CHARS:
+        if len(text) > self._bound_chars or len(tokens) > self._context_size:
+            return tokens                   # longer than all it may keep, or than the cache: not kept
+        if len(self._known) > self._BOUND or self._chars + len(text) > self._bound_chars:
             self._known.clear()
             self._chars = 0
         self._known[key] = tokens

@@ -38,8 +38,11 @@ the binding all the same, and a template's own refusal reason was lost.
 - Renders and their splits are remembered for one outermost action and the
   action after it, at most two actions' renders, except where the template
   reads the clock. The tokenizer memory starts over after 20,000 entries or
-  before it would hold 4,000,000 characters (about 40 MB with their tokens); a
-  longer text is tokenized without being kept. Each token's text and whether
+  before it would hold 120 characters per token of the context (about 30 times
+  the text a full context holds), at most 4,000,000 characters (about 44 MiB
+  with their tokens) at any context; a longer text, or one of more tokens than the
+  context holds, which can never be in the cache, is tokenized without being
+  kept. Each token's text and whether
   it is a tag are remembered, at most one entry per token of the vocabulary.
 
 ## Consequences
@@ -50,6 +53,12 @@ the binding all the same, and a template's own refusal reason was lost.
   to 2.0 times faster; remembering tag checks took a begin with 20 tools from
   121 ms to 45 ms. A 2 MB tool result left about 36 MB in the tokenizer memory
   before its character bound.
+- Measured on 2026-11-21: a token list costs 9.0 to 9.8 bytes per character
+  with Gemma 4's tokenizer, so the former fixed bound of 4,000,000 characters
+  held about 44 MiB whatever the context. A 1,000,000-character tool result
+  cut to fit a context of 4,096 left 16.5 MiB in the memory three turns
+  later. Scaled to the context, the bound is about 0.5 million characters,
+  about 5.5 MiB, at 4,096 tokens (estimated).
 - Without a clear at each action the render memo grew by about seven entries
   a turn, each keyed by the whole conversation (2,122 entries after 300 turns
   against 10).

@@ -78,7 +78,7 @@ class ConversationRendering:
         self._context = context
         self._template_of = template
         self._inputs = inputs
-        self._reader = MemoTokenizer(context)
+        self._reader = MemoTokenizer(context, context.context_size)
         self._memo: dict = {}             # renders and splits, by what was rendered
         self._earlier: dict = {}          # those of the action before, until this one uses them
         self._memo_made_for: tuple | None = None    # the template and inputs the memo holds

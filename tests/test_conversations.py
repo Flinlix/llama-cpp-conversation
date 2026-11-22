@@ -1943,12 +1943,24 @@ def test_a_call_quoted_in_a_thought_stays_the_thoughts_where_the_template_writes
 def test_the_tokenizer_memory_holds_no_more_text_than_its_bound_however_long_a_result():
     from llama_cpp_conversation.tokenizing import MemoTokenizer
 
-    memo = MemoTokenizer(FakeContext(_FALLBACK))
+    context_size = 4096
+    memo = MemoTokenizer(FakeContext(_FALLBACK), context_size)
+    bound = min(MemoTokenizer._CHARS_PER_CONTEXT_TOKEN * context_size, MemoTokenizer._BOUND_CHARS)
     for n in range(3):
-        memo.tokenize("y" * 2_500_000 + str(n))
-        memo.tokenize("z" * 5_000_000)
+        memo.tokenize("y" * (bound // 2) + str(n))
+        memo.tokenize("z" * (2 * bound))
+        memo.tokenize("w" * 1000 + str(n))
     held = sum(len(text) for text, _special, _parse in memo._known)
-    assert held <= MemoTokenizer._BOUND_CHARS
+    assert held <= bound
+
+
+def test_the_tokenizer_memory_keeps_no_text_of_more_tokens_than_the_context_holds():
+    from llama_cpp_conversation.tokenizing import MemoTokenizer
+
+    memo = MemoTokenizer(FakeContext(_FALLBACK), 100)
+    memo.tokenize("y" * 101)
+    memo.tokenize("y" * 100)
+    assert [text for text, _special, _parse in memo._known] == ["y" * 100]
 
 
 @pytest.mark.parametrize("stem", _TOOL_TEMPLATES)
